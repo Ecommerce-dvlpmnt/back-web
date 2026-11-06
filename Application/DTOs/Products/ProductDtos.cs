@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace EcommerceBackend.Application.DTOs.Products;
 
-/// <summary>Image information returned with a product.</summary>
 public sealed class ProductImageDto
 {
     public Guid Id { get; set; }
@@ -11,7 +10,6 @@ public sealed class ProductImageDto
     public int SortOrder { get; set; }
 }
 
-/// <summary>Product details returned by the API.</summary>
 public sealed class ProductDto
 {
     public Guid Id { get; set; }
@@ -37,7 +35,6 @@ public sealed class ProductDto
     public List<ProductImageDto> Images { get; set; } = [];
 }
 
-/// <summary>Image information supplied when creating or updating a product.</summary>
 public sealed class CreateProductImageDto
 {
     [Required]
@@ -47,7 +44,6 @@ public sealed class CreateProductImageDto
     public int SortOrder { get; set; }
 }
 
-/// <summary>Fields required to create a product.</summary>
 public class CreateProductDto
 {
     public Guid CategoryId { get; set; }
@@ -82,12 +78,10 @@ public class CreateProductDto
     public List<CreateProductImageDto>? Images { get; set; }
 }
 
-/// <summary>Fields used to replace a product and its image collection.</summary>
 public sealed class UpdateProductDto : CreateProductDto
 {
 }
 
-/// <summary>Filtering, sorting, and pagination options for product queries.</summary>
 public sealed class ProductQueryParameters
 {
     public Guid? CategoryId { get; set; }
@@ -99,7 +93,6 @@ public sealed class ProductQueryParameters
     public int PageSize { get; set; } = 12;
 }
 
-/// <summary>A page of results with pagination metadata.</summary>
 public sealed class PagedResult<T>
 {
     public IEnumerable<T> Items { get; set; } = [];

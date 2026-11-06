@@ -5,11 +5,8 @@ using EcommerceBackend.Domain.Entities;
 
 namespace EcommerceBackend.Application.Services;
 
-// Бизнес-слои категории: проверяет правила (уникальность slug, валидный JSON, запрет удаления непустых категорий)
-// и превращает сущности БД в DTO (и наоборот). Controller общается только с этим классом.
 public sealed class CategoryService(ICategoryRepository categoryRepository) : ICategoryService
 {
-    // Список всех категорий; onlyActive=true отдаёт только включённые (для клиентского каталога).
     public async Task<IReadOnlyList<CategoryDto>> GetAllAsync(
         bool? onlyActive,
         CancellationToken cancellationToken = default)
@@ -18,21 +15,18 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         return categories.Select(MapToDto).ToList();
     }
 
-    // Ищем по Id; null -> Controller отдаст 404.
     public async Task<CategoryDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var category = await categoryRepository.GetByIdAsync(id, cancellationToken);
         return category is null ? null : MapToDto(category);
     }
 
-    // Поисковая строка для витрины: /api/categories/by-slug/electronics
     public async Task<CategoryDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
         var category = await categoryRepository.GetBySlugAsync(slug, cancellationToken);
         return category is null ? null : MapToDto(category);
     }
 
-    // Создание: проверяем свободный slug, собираем сущность, сохраняем, возвращаем DTO.
     public async Task<CategoryDto> CreateAsync(CreateCategoryDto request, CancellationToken cancellationToken = default)
     {
         await EnsureUniqueAsync(request.Slug, null, cancellationToken);
@@ -53,7 +47,6 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         return MapToDto(await categoryRepository.CreateAsync(category, cancellationToken));
     }
 
-    // Полная замена категории. Сначала уникальность slug (кроме самого себя), потом ищем и перезаполняем поля.
     public async Task<CategoryDto?> UpdateAsync(
         Guid id,
         UpdateCategoryDto request,
@@ -77,7 +70,6 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         return updated is null ? null : MapToDto(updated);
     }
 
-    // Удаление: если у категории есть подкатегории или товары — запрет (409 через контроллер).
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (await categoryRepository.HasChildrenOrProductsAsync(id, cancellationToken))
@@ -86,7 +78,6 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         return await categoryRepository.DeleteAsync(id, cancellationToken);
     }
 
-    // Проверка занятости slug (нужна и контроллеру для 409, и нам внутри).
     public Task<bool> ExistsBySlugAsync(
         string slug,
         Guid? excludeId = null,
@@ -99,7 +90,6 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
             throw new InvalidOperationException("A category with this slug already exists.");
     }
 
-    // FilterSchema — jsonb-текст: пусто -> "{}"; битый JSON -> ошибка 400 (аналогично Attributes у продуктов).
     private static string NormalizeFilterSchema(string? filterSchema)
     {
         if (string.IsNullOrWhiteSpace(filterSchema))
@@ -116,7 +106,6 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         }
     }
 
-    // Entity -> DTO: ParentName берём из навигации, чтобы клиенту не требовался второй запрос.
     private static CategoryDto MapToDto(Category category) => new()
     {
         Id = category.Id,

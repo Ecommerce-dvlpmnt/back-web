@@ -9,7 +9,6 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class ImagesController(IProductService productService) : ControllerBase
 {
-    /// <summary>Uploads a main product image or adds an image to its gallery.</summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]

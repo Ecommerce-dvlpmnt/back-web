@@ -9,9 +9,6 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class CategoriesController(ICategoryService categoryService) : ControllerBase
 {
-    /// <summary>Returns the full category tree as a flat ordered list.</summary>
-    /// <param name="onlyActive">When true, only active categories are returned.</param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -22,7 +19,6 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         return Ok(await categoryService.GetAllAsync(onlyActive, cancellationToken));
     }
 
-    /// <summary>Returns a category by its Guid identifier.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -32,7 +28,6 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         return category is null ? NotFound() : Ok(category);
     }
 
-    /// <summary>Returns a category by its slug.</summary>
     [HttpGet("by-slug/{slug}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -42,7 +37,6 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         return category is null ? NotFound() : Ok(category);
     }
 
-    /// <summary>Creates a category.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -66,7 +60,6 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         }
     }
 
-    /// <summary>Replaces a category.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -92,7 +85,6 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         }
     }
 
-    /// <summary>Deletes a category. Fails when the category still has subcategories or products.</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

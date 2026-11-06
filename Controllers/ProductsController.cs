@@ -9,7 +9,6 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class ProductsController(IProductService productService) : ControllerBase
 {
-    /// <summary>Returns a filtered, sorted, paginated list of products.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -20,7 +19,6 @@ public sealed class ProductsController(IProductService productService) : Control
         return Ok(await productService.GetAllAsync(query, cancellationToken));
     }
 
-    /// <summary>Returns a product by its Guid identifier.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -30,7 +28,6 @@ public sealed class ProductsController(IProductService productService) : Control
         return product is null ? NotFound() : Ok(product);
     }
 
-    /// <summary>Returns a product by its slug for storefront clients.</summary>
     [HttpGet("by-slug/{slug}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -40,7 +37,6 @@ public sealed class ProductsController(IProductService productService) : Control
         return product is null ? NotFound() : Ok(product);
     }
 
-    /// <summary>Creates a product and its images.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -64,7 +60,6 @@ public sealed class ProductsController(IProductService productService) : Control
         }
     }
 
-    /// <summary>Replaces a product and its images.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -90,7 +85,6 @@ public sealed class ProductsController(IProductService productService) : Control
         }
     }
 
-    /// <summary>Deletes a product and its images.</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceBackend.Data;
 
-// DbSeeder наполняет базу демо-данными ТОЛЬКО если соответствующие таблицы пустые.
-// Вызывается из Program.cs в режиме Development — чтобы на дев-машинах проект сразу был "живой".
 public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
@@ -16,7 +14,6 @@ public static class DbSeeder
         await SeedProductsAsync(context, categoryIds, cancellationToken);
     }
 
-    // 1) Поставщики: 3 дефолтных, если таблица пуста.
     private static async Task SeedSuppliersAsync(AppDbContext context, CancellationToken cancellationToken)
     {
         if (await context.Suppliers.AnyAsync(cancellationToken))
@@ -54,7 +51,6 @@ public static class DbSeeder
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    // 2) Базовые корневые категории (в тему проекта), если таблица пуста. Возвращает их Id для привязки товаров.
     private static async Task<List<Guid>> SeedCategoriesAsync(AppDbContext context, CancellationToken cancellationToken)
     {
         if (await context.Categories.AnyAsync(cancellationToken))
@@ -86,7 +82,6 @@ public static class DbSeeder
         return categories.Select(c => c.Id).ToList();
     }
 
-    // 3) Товары: 18 штук через Faker<Product> — имена тематические, цены/остатки/картинки рандомные.
     private static async Task SeedProductsAsync(
         AppDbContext context,
         List<Guid> categoryIds,
@@ -99,7 +94,6 @@ public static class DbSeeder
         if (supplierIds.Count == 0 || categoryIds.Count == 0)
             return;
 
-        // Имя + slug идут парами: slug гарантированно уникальный (уникальный индекс в БД).
         var catalog = new (string Name, string Slug)[]
         {
             ("Шар стеклянный «Зимняя сказка» 8 см", "shar-zimnyaya-skazka"),
@@ -122,7 +116,6 @@ public static class DbSeeder
             ("Упаковочная бумага «Крафт-Снежинки»", "bumaga-kraft")
         };
 
-        // Проверенные живые фото Unsplash (остальные ID_answers 404 — поэтому пул маленький, зато рабочий).
         const string unsplashBase = "https://images.unsplash.com/photo-";
         string[] unsplashVerified =
         [
@@ -151,13 +144,10 @@ public static class DbSeeder
                 .RuleFor(p => p.Price, _ => price)
                 .RuleFor(p => p.OldPrice, f => f.Random.Bool(0.3f) ? Math.Round(price * 1.2m, 2) : null)
                 .RuleFor(p => p.Stock, f => f.Random.Int(5, 80))
-                // Bogus выдаёт даты с Kind=Local, а Npgsql требует UTC для timestamptz — принудительно помечаем.
                 .RuleFor(p => p.StockUpdatedAt, f => DateTime.SpecifyKind(f.Date.Recent(20), DateTimeKind.Utc))
-                // Главное фото: 30% — Unsplash, 70% — Picsum с seed по слагу (детерминированно и всегда живое).
                 .RuleFor(p => p.MainImageUrl, (f, p) => f.Random.Bool(0.3f)
                     ? $"{unsplashBase}{f.PickRandom(unsplashVerified)}?auto=format&fit=crop&w=800&q=60"
                     : $"https://picsum.photos/seed/ny{p.Slug}/800/600")
-                // Галерея: два дополнительных фото в ProductImages (SortOrder — порядок в слайдере).
                 .RuleFor(p => p.Images, (f, p) => new List<ProductImage>
                 {
                     new()

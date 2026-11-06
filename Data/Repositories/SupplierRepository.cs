@@ -4,10 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceBackend.Data.Repositories;
 
-// Доступ к данным поставщиков: LINQ -> SQL, без бизнес-правил.
 public sealed class SupplierRepository(AppDbContext dbContext) : ISupplierRepository
 {
-    // Для админки фронта: активные по умолчанию, отсортированы по имени.
     public async Task<IReadOnlyList<Supplier>> GetAllAsync(
         bool onlyActive,
         CancellationToken cancellationToken = default)
@@ -36,7 +34,6 @@ public sealed class SupplierRepository(AppDbContext dbContext) : ISupplierReposi
         return supplier;
     }
 
-    // Сравнение по специалист lower(name) — Postgres LOWER() вытеснится в SQL.
     public Task<bool> ExistsByNameAsync(
         string name,
         Guid? excludeId = null,

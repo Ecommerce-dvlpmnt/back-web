@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace EcommerceBackend.Application.DTOs.Categories;
 
-/// <summary>Category details returned by the API.</summary>
 public sealed class CategoryDto
 {
     public Guid Id { get; set; }
@@ -17,7 +16,6 @@ public sealed class CategoryDto
     public string? MetaDescription { get; set; }
 }
 
-/// <summary>Fields required to create a category.</summary>
 public class CreateCategoryDto
 {
     [Required]
@@ -44,7 +42,6 @@ public class CreateCategoryDto
     public string? MetaDescription { get; set; }
 }
 
-/// <summary>Fields used to replace a category.</summary>
 public sealed class UpdateCategoryDto : CreateCategoryDto
 {
 }

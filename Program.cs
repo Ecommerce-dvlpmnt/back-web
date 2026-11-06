@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using EcommerceBackend.Application.Interfaces;
+﻿using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
@@ -15,9 +14,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "in local configuration or the ConnectionStrings__Default environment variable.");
 }
 
-// Add services to the container.
-
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -30,16 +28,10 @@ builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
 
-builder.Services.AddSwaggerGen(options =>
-{
-    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    options.IncludeXmlComments(xmlPath);
-});
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Наполняем базу демо-данными только в Development и только если таблицы пустые.
 if (app.Environment.IsDevelopment())
 {
     using var seedScope = app.Services.CreateScope();
@@ -47,8 +39,10 @@ if (app.Environment.IsDevelopment())
     await DbSeeder.SeedAsync(db);
 }
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+var swaggerEnabled = app.Environment.IsDevelopment() ||
+                     app.Configuration.GetValue<bool>("Swagger:Enabled");
+
+if (swaggerEnabled)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -59,6 +53,10 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseAuthorization();
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .WithTags("Health")
+    .WithName("HealthCheck");
 
 app.MapControllers();
 
