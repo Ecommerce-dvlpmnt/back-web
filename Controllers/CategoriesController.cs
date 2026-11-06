@@ -14,6 +14,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetAll(
         [FromQuery] bool? onlyActive,
         CancellationToken cancellationToken)
@@ -44,8 +45,8 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     /// <summary>Creates a category.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> Create(
         [FromBody] CreateCategoryDto request,
         CancellationToken cancellationToken)
@@ -68,9 +69,9 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     /// <summary>Replaces a category.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> Update(
         Guid id,
         [FromBody] UpdateCategoryDto request,
@@ -95,7 +96,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         try

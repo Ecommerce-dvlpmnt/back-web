@@ -1,6 +1,197 @@
-@EcommerceBackend_HostAddress = http://localhost:5062
+@hostname = localhost
+@port = 5062
+@baseUrl = http://{{hostname}}:{{port}}
+@supplierId = 00000000-0000-0000-0000-000000000001
 
-GET {{EcommerceBackend_HostAddress}}/weatherforecast/
+### Получить все активные категории
+GET {{baseUrl}}/api/categories?onlyActive=true
 Accept: application/json
 
-###
+### Создать категорию
+# Запрос создает категорию; ее ID используется в последующих запросах.
+# Перед запуском измените slug, если novogodnie-ukrasheniya уже существует.
+# @name createCategory
+POST {{baseUrl}}/api/categories
+Content-Type: application/json
+
+{
+  "name": "Новогодние украшения",
+  "slug": "novogodnie-ukrasheniya",
+  "parentId": null,
+  "sortOrder": 1,
+  "isActive": true,
+  "filterSchema": null,
+  "metaTitle": "Новогодние украшения",
+  "metaDescription": "Ёлки, гирлянды и ёлочные игрушки"
+}
+
+### Получить созданную категорию по ID
+GET {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+Accept: application/json
+
+### Найти категорию по slug
+GET {{baseUrl}}/api/categories/by-slug/novogodnie-ukrasheniya
+Accept: application/json
+
+### Полностью обновить созданную категорию
+PUT {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "name": "Ёлки, гирлянды и игрушки",
+  "slug": "elki-girlyandy-igrushki",
+  "parentId": null,
+  "sortOrder": 2,
+  "isActive": true,
+  "filterSchema": null,
+  "metaTitle": "Ёлки, гирлянды и игрушки",
+  "metaDescription": "Всё для праздничного украшения дома"
+}
+
+### Получить все товары (с пагинацией и сортировкой по умолчанию)
+GET {{baseUrl}}/api/products
+Accept: application/json
+
+### Создать искусственную ёлку в новогодней категории
+# Укажите ID существующего поставщика в переменной supplierId в начале файла.
+# @name createProduct
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{
+  "categoryId": "{{createCategory.response.body.$.id}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "DEMO-NEWYEAR-TREE-001",
+  "name": "Искусственная ёлка 180 см",
+  "slug": "iskusstvennaya-elka-180-sm",
+  "description": "Пышная искусственная ёлка для новогоднего праздника",
+  "dropPrice": 2500.00,
+  "price": 3999.00,
+  "oldPrice": 4499.00,
+  "stock": 12,
+  "mainImageUrl": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
+  "attributes": null,
+  "metaTitle": "Искусственная ёлка 180 см",
+  "metaDescription": "Пышная искусственная ёлка для дома",
+  "weightKg": 5.5,
+  "isActive": true,
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
+      "alt": "Искусственная ёлка 180 см",
+      "sortOrder": 0
+    }
+  ]
+}
+
+### Создать светодиодную гирлянду в новогодней категории
+# @name createGarland
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{
+  "categoryId": "{{createCategory.response.body.$.id}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "DEMO-NEWYEAR-GARLAND-001",
+  "name": "Светодиодная гирлянда 10 м",
+  "slug": "svetodiodnaya-girlyanda-10-m",
+  "description": "Тёплый белый свет, 100 светодиодов",
+  "dropPrice": 350.00,
+  "price": 699.00,
+  "oldPrice": 799.00,
+  "stock": 40,
+  "mainImageUrl": "https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=1200&q=80",
+  "attributes": null,
+  "metaTitle": "Светодиодная гирлянда 10 м",
+  "metaDescription": "Гирлянда с тёплым белым светом",
+  "weightKg": 0.4,
+  "isActive": true,
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=1200&q=80",
+      "alt": "Светодиодная гирлянда 10 м",
+      "sortOrder": 0
+    }
+  ]
+}
+
+### Создать набор ёлочных игрушек в новогодней категории
+# @name createOrnaments
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{
+  "categoryId": "{{createCategory.response.body.$.id}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "DEMO-NEWYEAR-ORNAMENTS-001",
+  "name": "Набор ёлочных шаров, 24 шт.",
+  "slug": "nabor-elochnykh-sharov-24",
+  "description": "Набор ёлочных шаров разных цветов для праздничной ёлки",
+  "dropPrice": 450.00,
+  "price": 899.00,
+  "oldPrice": 999.00,
+  "stock": 30,
+  "mainImageUrl": "https://images.unsplash.com/photo-1512909006721-3d6018887383?auto=format&fit=crop&w=1200&q=80",
+  "attributes": null,
+  "metaTitle": "Набор ёлочных шаров, 24 шт.",
+  "metaDescription": "Набор праздничных ёлочных игрушек",
+  "weightKg": 0.8,
+  "isActive": true,
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1512909006721-3d6018887383?auto=format&fit=crop&w=1200&q=80",
+      "alt": "Набор ёлочных шаров",
+      "sortOrder": 0
+    }
+  ]
+}
+
+### Получить созданный товар по ID
+GET {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
+Accept: application/json
+
+### Найти товар по slug
+GET {{baseUrl}}/api/products/by-slug/iskusstvennaya-elka-180-sm
+Accept: application/json
+
+### Полностью обновить созданный товар
+PUT {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "categoryId": "{{createCategory.response.body.$.id}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "DEMO-NEWYEAR-TREE-001",
+  "name": "Искусственная ёлка 180 см",
+  "slug": "iskusstvennaya-elka-180-sm",
+  "description": "Пышная искусственная ёлка с прочными ветками",
+  "dropPrice": 2500.00,
+  "price": 3799.00,
+  "oldPrice": 3999.00,
+  "stock": 15,
+  "mainImageUrl": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
+  "attributes": null,
+  "metaTitle": "Искусственная ёлка 180 см",
+  "metaDescription": "Ёлка для праздничного украшения дома",
+  "weightKg": 5.5,
+  "isActive": true,
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
+      "alt": "Искусственная ёлка 180 см",
+      "sortOrder": 0
+    }
+  ]
+}
+
+### Удалить созданный товар
+DELETE {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
+
+### Удалить созданную гирлянду
+DELETE {{baseUrl}}/api/products/{{createGarland.response.body.$.id}}
+
+### Удалить созданные ёлочные игрушки
+DELETE {{baseUrl}}/api/products/{{createOrnaments.response.body.$.id}}
+
+### Удалить созданную категорию
+DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
