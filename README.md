@@ -10,3 +10,14 @@
 >
 > **Обязательство на спринт к 14 февраля:**  
 > При закрытии условия Максим Сергеевич лично выходит на контакт (звонок / личное сообщение) с Принцессой и полностью закрывает договоренность о съёмке и публикации рекламного интеграционного ролика под праздничный трафик.
+
+## Локальный запуск
+
+Для запуска API и заполнения демо-данных нужна строка подключения PostgreSQL. Храните её локально в .NET User Secrets, а не в `appsettings.json` или Git:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:Default" "Host=<host>;Port=5432;Database=<database>;Username=<username>;Password=<password>;SSL Mode=Require"
+dotnet run
+```
+
+Запускайте команды из каталога с `EcommerceBackend.csproj`. Если строка подключения не настроена, приложение завершится с сообщением о недостающей настройке. User Secrets автоматически загружаются в режиме `Development`, установленном в `Properties/launchSettings.json`.
