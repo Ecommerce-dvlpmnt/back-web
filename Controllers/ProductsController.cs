@@ -12,6 +12,7 @@ public sealed class ProductsController(IProductService productService) : Control
     /// <summary>Returns a filtered, sorted, paginated list of products.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<ProductDto>>> GetAll(
         [FromQuery] ProductQueryParameters query,
         CancellationToken cancellationToken)
@@ -42,8 +43,8 @@ public sealed class ProductsController(IProductService productService) : Control
     /// <summary>Creates a product and its images.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductDto>> Create(
         [FromBody] CreateProductDto request,
         CancellationToken cancellationToken)
@@ -66,9 +67,9 @@ public sealed class ProductsController(IProductService productService) : Control
     /// <summary>Replaces a product and its images.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductDto>> Update(
         Guid id,
         [FromBody] UpdateProductDto request,
