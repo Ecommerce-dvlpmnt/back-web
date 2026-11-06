@@ -100,6 +100,30 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         return await GetByIdAsync(existing.Id, cancellationToken);
     }
 
+    public async Task<Product?> UpdateImageAsync(
+        Guid productId,
+        string? mainImageUrl,
+        ProductImage? image,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await dbContext.Products
+            .Include(item => item.Images)
+            .FirstOrDefaultAsync(item => item.Id == productId, cancellationToken);
+
+        if (product is null)
+            return null;
+
+        if (image is null)
+            product.MainImageUrl = mainImageUrl;
+        else
+            product.Images.Add(image);
+
+        product.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return await GetByIdAsync(productId, cancellationToken);
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var product = await dbContext.Products.FindAsync([id], cancellationToken);

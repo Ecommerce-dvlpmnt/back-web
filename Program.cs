@@ -3,6 +3,7 @@ using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
+using EcommerceBackend.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,7 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
 
 builder.Services.AddSwaggerGen(options =>
 {
@@ -53,6 +55,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseStaticFiles();
 
 app.UseAuthorization();
 
