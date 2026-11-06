@@ -10,8 +10,8 @@ var connectionString = builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
-        "Connection string 'Default' is missing. In Development, configure it with " +
-        "`dotnet user-secrets set \"ConnectionStrings:Default\" \"<connection-string>\"`.");
+        "Connection string 'Default' is missing. Configure ConnectionStrings:Default " +
+        "in local configuration or the ConnectionStrings__Default environment variable.");
 }
 
 // Add services to the container.
