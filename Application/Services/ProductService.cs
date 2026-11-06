@@ -2,10 +2,13 @@ using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Products;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Domain.Entities;
+using Microsoft.AspNetCore.Http;
 
 namespace EcommerceBackend.Application.Services;
 
-public sealed class ProductService(IProductRepository productRepository) : IProductService
+public sealed class ProductService(
+    IProductRepository productRepository,
+    IImageStorageService imageStorageService) : IProductService
 {
     public async Task<PagedResult<ProductDto>> GetAllAsync(
         ProductQueryParameters query,
@@ -95,6 +98,46 @@ public sealed class ProductService(IProductRepository productRepository) : IProd
 
         var updated = await productRepository.UpdateAsync(product, cancellationToken);
         return updated is null ? null : MapToDto(updated);
+    }
+
+    public async Task<ProductDto> UploadImageToProductAsync(
+        Guid productId,
+        IFormFile file,
+        bool isMainImage,
+        CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(productId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+
+        var imageUrl = await imageStorageService.UploadImageAsync(file, "products", cancellationToken);
+        ProductImage? image = null;
+        string? mainImageUrl = null;
+
+        if (isMainImage)
+        {
+            mainImageUrl = imageUrl;
+        }
+        else
+        {
+            image = new ProductImage
+            {
+                Id = Guid.NewGuid(),
+                ProductId = productId,
+                Url = imageUrl,
+                SortOrder = product.Images.Count == 0
+                    ? 0
+                    : product.Images.Max(existingImage => existingImage.SortOrder) + 1
+            };
+        }
+
+        var updatedProduct = await productRepository.UpdateImageAsync(
+            productId,
+            mainImageUrl,
+            image,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+
+        return MapToDto(updatedProduct);
     }
 
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
