@@ -32,6 +32,14 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+var migrateOnStartup = app.Configuration.GetValue<bool>("Database:MigrateOnStartup");
+if (migrateOnStartup)
+{
+    await using var migrationScope = app.Services.CreateAsyncScope();
+    var db = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 if (app.Environment.IsDevelopment())
 {
     using var seedScope = app.Services.CreateScope();

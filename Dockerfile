@@ -15,6 +15,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
 WORKDIR /app
 
+RUN mkdir -p /app/wwwroot
+
 COPY --from=build /app/publish .
 
 ENTRYPOINT ["dotnet", "EcommerceBackend.dll"]
