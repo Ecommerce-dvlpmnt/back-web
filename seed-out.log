@@ -1,0 +1,201 @@
+Используются параметры запуска из F:\EcommerceBackend\Properties\launchSettings.json...
+Сборка…
+warn: Microsoft.EntityFrameworkCore.Model.Validation[20601]
+      The 'OrderStatus' property 'OrderStatus' on entity type 'Order' is configured with a database-generated default, but has no configured sentinel value. The database-generated default will always be used for inserts when the property has the value 'New', since this is the CLR default for the 'OrderStatus' type. Consider using a nullable type, using a nullable backing field, or setting the sentinel value for the property to ensure the database default is used when, and only when, appropriate. See https://aka.ms/efcore-docs-default-values for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[20601]
+      The 'PaymentMethod' property 'PaymentMethod' on entity type 'Order' is configured with a database-generated default, but has no configured sentinel value. The database-generated default will always be used for inserts when the property has the value 'CashOnDelivery', since this is the CLR default for the 'PaymentMethod' type. Consider using a nullable type, using a nullable backing field, or setting the sentinel value for the property to ensure the database default is used when, and only when, appropriate. See https://aka.ms/efcore-docs-default-values for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[20601]
+      The 'PaymentStatus' property 'PaymentStatus' on entity type 'Order' is configured with a database-generated default, but has no configured sentinel value. The database-generated default will always be used for inserts when the property has the value 'Pending', since this is the CLR default for the 'PaymentStatus' type. Consider using a nullable type, using a nullable backing field, or setting the sentinel value for the property to ensure the database default is used when, and only when, appropriate. See https://aka.ms/efcore-docs-default-values for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[20601]
+      The 'ShipmentStatus' property 'Status' on entity type 'OrderShipment' is configured with a database-generated default, but has no configured sentinel value. The database-generated default will always be used for inserts when the property has the value 'Pending', since this is the CLR default for the 'ShipmentStatus' type. Consider using a nullable type, using a nullable backing field, or setting the sentinel value for the property to ensure the database default is used when, and only when, appropriate. See https://aka.ms/efcore-docs-default-values for more information.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (65ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Suppliers" AS s)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (52ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Categories" AS c)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (51ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id"
+      FROM "Categories" AS c
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (52ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Products" AS p)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (51ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT s."Id"
+      FROM "Suppliers" AS s
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (119ms) [Parameters=[@p0='?' (DbType = Guid), @p1='?' (DbType = Object), @p2='?' (DbType = Guid), @p3='?' (DbType = DateTime), @p4='?', @p5='?' (DbType = Decimal), @p6='?', @p7='?', @p8='?', @p9='?', @p10='?' (DbType = Decimal), @p11='?' (DbType = Decimal), @p12='?', @p13='?', @p14='?' (DbType = Int32), @p15='?' (DbType = DateTime), @p16='?' (DbType = Guid), @p17='?' (DbType = DateTime), @p18='?' (DbType = Decimal), @p19='?' (DbType = Guid), @p20='?' (DbType = Object), @p21='?' (DbType = Guid), @p22='?' (DbType = DateTime), @p23='?', @p24='?' (DbType = Decimal), @p25='?', @p26='?', @p27='?', @p28='?', @p29='?' (DbType = Decimal), @p30='?' (DbType = Decimal), @p31='?', @p32='?', @p33='?' (DbType = Int32), @p34='?' (DbType = DateTime), @p35='?' (DbType = Guid), @p36='?' (DbType = DateTime), @p37='?' (DbType = Decimal), @p38='?' (DbType = Guid), @p39='?' (DbType = Object), @p40='?' (DbType = Guid), @p41='?' (DbType = DateTime), @p42='?', @p43='?' (DbType = Decimal), @p44='?', @p45='?', @p46='?', @p47='?', @p48='?' (DbType = Decimal), @p49='?' (DbType = Decimal), @p50='?', @p51='?', @p52='?' (DbType = Int32), @p53='?' (DbType = DateTime), @p54='?' (DbType = Guid), @p55='?' (DbType = DateTime), @p56='?' (DbType = Decimal), @p57='?' (DbType = Guid), @p58='?' (DbType = Object), @p59='?' (DbType = Guid), @p60='?' (DbType = DateTime), @p61='?', @p62='?' (DbType = Decimal), @p63='?', @p64='?', @p65='?', @p66='?', @p67='?' (DbType = Decimal), @p68='?' (DbType = Decimal), @p69='?', @p70='?', @p71='?' (DbType = Int32), @p72='?' (DbType = DateTime), @p73='?' (DbType = Guid), @p74='?' (DbType = DateTime), @p75='?' (DbType = Decimal), @p76='?' (DbType = Guid), @p77='?' (DbType = Object), @p78='?' (DbType = Guid), @p79='?' (DbType = DateTime), @p80='?', @p81='?' (DbType = Decimal), @p82='?', @p83='?', @p84='?', @p85='?', @p86='?' (DbType = Decimal), @p87='?' (DbType = Decimal), @p88='?', @p89='?', @p90='?' (DbType = Int32), @p91='?' (DbType = DateTime), @p92='?' (DbType = Guid), @p93='?' (DbType = DateTime), @p94='?' (DbType = Decimal), @p95='?' (DbType = Guid), @p96='?' (DbType = Object), @p97='?' (DbType = Guid), @p98='?' (DbType = DateTime), @p99='?', @p100='?' (DbType = Decimal), @p101='?', @p102='?', @p103='?', @p104='?', @p105='?' (DbType = Decimal), @p106='?' (DbType = Decimal), @p107='?', @p108='?', @p109='?' (DbType = Int32), @p110='?' (DbType = DateTime), @p111='?' (DbType = Guid), @p112='?' (DbType = DateTime), @p113='?' (DbType = Decimal), @p114='?' (DbType = Guid), @p115='?' (DbType = Object), @p116='?' (DbType = Guid), @p117='?' (DbType = DateTime), @p118='?', @p119='?' (DbType = Decimal), @p120='?', @p121='?', @p122='?', @p123='?', @p124='?' (DbType = Decimal), @p125='?' (DbType = Decimal), @p126='?', @p127='?', @p128='?' (DbType = Int32), @p129='?' (DbType = DateTime), @p130='?' (DbType = Guid), @p131='?' (DbType = DateTime), @p132='?' (DbType = Decimal), @p133='?' (DbType = Guid), @p134='?' (DbType = Object), @p135='?' (DbType = Guid), @p136='?' (DbType = DateTime), @p137='?', @p138='?' (DbType = Decimal), @p139='?', @p140='?', @p141='?', @p142='?', @p143='?' (DbType = Decimal), @p144='?' (DbType = Decimal), @p145='?', @p146='?', @p147='?' (DbType = Int32), @p148='?' (DbType = DateTime), @p149='?' (DbType = Guid), @p150='?' (DbType = DateTime), @p151='?' (DbType = Decimal), @p152='?' (DbType = Guid), @p153='?' (DbType = Object), @p154='?' (DbType = Guid), @p155='?' (DbType = DateTime), @p156='?', @p157='?' (DbType = Decimal), @p158='?', @p159='?', @p160='?', @p161='?', @p162='?' (DbType = Decimal), @p163='?' (DbType = Decimal), @p164='?', @p165='?', @p166='?' (DbType = Int32), @p167='?' (DbType = DateTime), @p168='?' (DbType = Guid), @p169='?' (DbType = DateTime), @p170='?' (DbType = Decimal), @p171='?' (DbType = Guid), @p172='?' (DbType = Object), @p173='?' (DbType = Guid), @p174='?' (DbType = DateTime), @p175='?', @p176='?' (DbType = Decimal), @p177='?', @p178='?', @p179='?', @p180='?', @p181='?' (DbType = Decimal), @p182='?' (DbType = Decimal), @p183='?', @p184='?', @p185='?' (DbType = Int32), @p186='?' (DbType = DateTime), @p187='?' (DbType = Guid), @p188='?' (DbType = DateTime), @p189='?' (DbType = Decimal), @p190='?' (DbType = Guid), @p191='?' (DbType = Object), @p192='?' (DbType = Guid), @p193='?' (DbType = DateTime), @p194='?', @p195='?' (DbType = Decimal), @p196='?', @p197='?', @p198='?', @p199='?', @p200='?' (DbType = Decimal), @p201='?' (DbType = Decimal), @p202='?', @p203='?', @p204='?' (DbType = Int32), @p205='?' (DbType = DateTime), @p206='?' (DbType = Guid), @p207='?' (DbType = DateTime), @p208='?' (DbType = Decimal), @p209='?' (DbType = Guid), @p210='?' (DbType = Object), @p211='?' (DbType = Guid), @p212='?' (DbType = DateTime), @p213='?', @p214='?' (DbType = Decimal), @p215='?', @p216='?', @p217='?', @p218='?', @p219='?' (DbType = Decimal), @p220='?' (DbType = Decimal), @p221='?', @p222='?', @p223='?' (DbType = Int32), @p224='?' (DbType = DateTime), @p225='?' (DbType = Guid), @p226='?' (DbType = DateTime), @p227='?' (DbType = Decimal), @p228='?' (DbType = Guid), @p229='?' (DbType = Object), @p230='?' (DbType = Guid), @p231='?' (DbType = DateTime), @p232='?', @p233='?' (DbType = Decimal), @p234='?', @p235='?', @p236='?', @p237='?', @p238='?' (DbType = Decimal), @p239='?' (DbType = Decimal), @p240='?', @p241='?', @p242='?' (DbType = Int32), @p243='?' (DbType = DateTime), @p244='?' (DbType = Guid), @p245='?' (DbType = DateTime), @p246='?' (DbType = Decimal), @p247='?' (DbType = Guid), @p248='?' (DbType = Object), @p249='?' (DbType = Guid), @p250='?' (DbType = DateTime), @p251='?', @p252='?' (DbType = Decimal), @p253='?', @p254='?', @p255='?', @p256='?', @p257='?' (DbType = Decimal), @p258='?' (DbType = Decimal), @p259='?', @p260='?', @p261='?' (DbType = Int32), @p262='?' (DbType = DateTime), @p263='?' (DbType = Guid), @p264='?' (DbType = DateTime), @p265='?' (DbType = Decimal), @p266='?' (DbType = Guid), @p267='?' (DbType = Object), @p268='?' (DbType = Guid), @p269='?' (DbType = DateTime), @p270='?', @p271='?' (DbType = Decimal), @p272='?', @p273='?', @p274='?', @p275='?', @p276='?' (DbType = Decimal), @p277='?' (DbType = Decimal), @p278='?', @p279='?', @p280='?' (DbType = Int32), @p281='?' (DbType = DateTime), @p282='?' (DbType = Guid), @p283='?' (DbType = DateTime), @p284='?' (DbType = Decimal), @p285='?' (DbType = Guid), @p286='?' (DbType = Object), @p287='?' (DbType = Guid), @p288='?' (DbType = DateTime), @p289='?', @p290='?' (DbType = Decimal), @p291='?', @p292='?', @p293='?', @p294='?', @p295='?' (DbType = Decimal), @p296='?' (DbType = Decimal), @p297='?', @p298='?', @p299='?' (DbType = Int32), @p300='?' (DbType = DateTime), @p301='?' (DbType = Guid), @p302='?' (DbType = DateTime), @p303='?' (DbType = Decimal), @p304='?' (DbType = Guid), @p305='?' (DbType = Object), @p306='?' (DbType = Guid), @p307='?' (DbType = DateTime), @p308='?', @p309='?' (DbType = Decimal), @p310='?', @p311='?', @p312='?', @p313='?', @p314='?' (DbType = Decimal), @p315='?' (DbType = Decimal), @p316='?', @p317='?', @p318='?' (DbType = Int32), @p319='?' (DbType = DateTime), @p320='?' (DbType = Guid), @p321='?' (DbType = DateTime), @p322='?' (DbType = Decimal), @p323='?' (DbType = Guid), @p324='?' (DbType = Object), @p325='?' (DbType = Guid), @p326='?' (DbType = DateTime), @p327='?', @p328='?' (DbType = Decimal), @p329='?', @p330='?', @p331='?', @p332='?', @p333='?' (DbType = Decimal), @p334='?' (DbType = Decimal), @p335='?', @p336='?', @p337='?' (DbType = Int32), @p338='?' (DbType = DateTime), @p339='?' (DbType = Guid), @p340='?' (DbType = DateTime), @p341='?' (DbType = Decimal), @p342='?' (DbType = Guid), @p343='?', @p344='?' (DbType = Guid), @p345='?' (DbType = Int32), @p346='?', @p347='?' (DbType = Guid), @p348='?', @p349='?' (DbType = Guid), @p350='?' (DbType = Int32), @p351='?', @p352='?' (DbType = Guid), @p353='?', @p354='?' (DbType = Guid), @p355='?' (DbType = Int32), @p356='?', @p357='?' (DbType = Guid), @p358='?', @p359='?' (DbType = Guid), @p360='?' (DbType = Int32), @p361='?', @p362='?' (DbType = Guid), @p363='?', @p364='?' (DbType = Guid), @p365='?' (DbType = Int32), @p366='?', @p367='?' (DbType = Guid), @p368='?', @p369='?' (DbType = Guid), @p370='?' (DbType = Int32), @p371='?', @p372='?' (DbType = Guid), @p373='?', @p374='?' (DbType = Guid), @p375='?' (DbType = Int32), @p376='?', @p377='?' (DbType = Guid), @p378='?', @p379='?' (DbType = Guid), @p380='?' (DbType = Int32), @p381='?', @p382='?' (DbType = Guid), @p383='?', @p384='?' (DbType = Guid), @p385='?' (DbType = Int32), @p386='?', @p387='?' (DbType = Guid), @p388='?', @p389='?' (DbType = Guid), @p390='?' (DbType = Int32), @p391='?', @p392='?' (DbType = Guid), @p393='?', @p394='?' (DbType = Guid), @p395='?' (DbType = Int32), @p396='?', @p397='?' (DbType = Guid), @p398='?', @p399='?' (DbType = Guid), @p400='?' (DbType = Int32), @p401='?', @p402='?' (DbType = Guid), @p403='?', @p404='?' (DbType = Guid), @p405='?' (DbType = Int32), @p406='?', @p407='?' (DbType = Guid), @p408='?', @p409='?' (DbType = Guid), @p410='?' (DbType = Int32), @p411='?', @p412='?' (DbType = Guid), @p413='?', @p414='?' (DbType = Guid), @p415='?' (DbType = Int32), @p416='?', @p417='?' (DbType = Guid), @p418='?', @p419='?' (DbType = Guid), @p420='?' (DbType = Int32), @p421='?', @p422='?' (DbType = Guid), @p423='?', @p424='?' (DbType = Guid), @p425='?' (DbType = Int32), @p426='?', @p427='?' (DbType = Guid), @p428='?', @p429='?' (DbType = Guid), @p430='?' (DbType = Int32), @p431='?', @p432='?' (DbType = Guid), @p433='?', @p434='?' (DbType = Guid), @p435='?' (DbType = Int32), @p436='?', @p437='?' (DbType = Guid), @p438='?', @p439='?' (DbType = Guid), @p440='?' (DbType = Int32), @p441='?', @p442='?' (DbType = Guid), @p443='?', @p444='?' (DbType = Guid), @p445='?' (DbType = Int32), @p446='?', @p447='?' (DbType = Guid), @p448='?', @p449='?' (DbType = Guid), @p450='?' (DbType = Int32), @p451='?', @p452='?' (DbType = Guid), @p453='?', @p454='?' (DbType = Guid), @p455='?' (DbType = Int32), @p456='?', @p457='?' (DbType = Guid), @p458='?', @p459='?' (DbType = Guid), @p460='?' (DbType = Int32), @p461='?', @p462='?' (DbType = Guid), @p463='?', @p464='?' (DbType = Guid), @p465='?' (DbType = Int32), @p466='?', @p467='?' (DbType = Guid), @p468='?', @p469='?' (DbType = Guid), @p470='?' (DbType = Int32), @p471='?', @p472='?' (DbType = Guid), @p473='?', @p474='?' (DbType = Guid), @p475='?' (DbType = Int32), @p476='?', @p477='?' (DbType = Guid), @p478='?', @p479='?' (DbType = Guid), @p480='?' (DbType = Int32), @p481='?', @p482='?' (DbType = Guid), @p483='?', @p484='?' (DbType = Guid), @p485='?' (DbType = Int32), @p486='?', @p487='?' (DbType = Guid), @p488='?', @p489='?' (DbType = Guid), @p490='?' (DbType = Int32), @p491='?', @p492='?' (DbType = Guid), @p493='?', @p494='?' (DbType = Guid), @p495='?' (DbType = Int32), @p496='?', @p497='?' (DbType = Guid), @p498='?', @p499='?' (DbType = Guid), @p500='?' (DbType = Int32), @p501='?', @p502='?' (DbType = Guid), @p503='?', @p504='?' (DbType = Guid), @p505='?' (DbType = Int32), @p506='?', @p507='?' (DbType = Guid), @p508='?', @p509='?' (DbType = Guid), @p510='?' (DbType = Int32), @p511='?', @p512='?' (DbType = Guid), @p513='?', @p514='?' (DbType = Guid), @p515='?' (DbType = Int32), @p516='?', @p517='?' (DbType = Guid), @p518='?', @p519='?' (DbType = Guid), @p520='?' (DbType = Int32), @p521='?'], CommandType='Text', CommandTimeout='30']
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p19, @p20, @p21, @p22, @p23, @p24, @p25, @p26, @p27, @p28, @p29, @p30, @p31, @p32, @p33, @p34, @p35, @p36, @p37)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p38, @p39, @p40, @p41, @p42, @p43, @p44, @p45, @p46, @p47, @p48, @p49, @p50, @p51, @p52, @p53, @p54, @p55, @p56)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p57, @p58, @p59, @p60, @p61, @p62, @p63, @p64, @p65, @p66, @p67, @p68, @p69, @p70, @p71, @p72, @p73, @p74, @p75)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p76, @p77, @p78, @p79, @p80, @p81, @p82, @p83, @p84, @p85, @p86, @p87, @p88, @p89, @p90, @p91, @p92, @p93, @p94)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p95, @p96, @p97, @p98, @p99, @p100, @p101, @p102, @p103, @p104, @p105, @p106, @p107, @p108, @p109, @p110, @p111, @p112, @p113)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p114, @p115, @p116, @p117, @p118, @p119, @p120, @p121, @p122, @p123, @p124, @p125, @p126, @p127, @p128, @p129, @p130, @p131, @p132)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p133, @p134, @p135, @p136, @p137, @p138, @p139, @p140, @p141, @p142, @p143, @p144, @p145, @p146, @p147, @p148, @p149, @p150, @p151)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p152, @p153, @p154, @p155, @p156, @p157, @p158, @p159, @p160, @p161, @p162, @p163, @p164, @p165, @p166, @p167, @p168, @p169, @p170)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p171, @p172, @p173, @p174, @p175, @p176, @p177, @p178, @p179, @p180, @p181, @p182, @p183, @p184, @p185, @p186, @p187, @p188, @p189)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p190, @p191, @p192, @p193, @p194, @p195, @p196, @p197, @p198, @p199, @p200, @p201, @p202, @p203, @p204, @p205, @p206, @p207, @p208)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p209, @p210, @p211, @p212, @p213, @p214, @p215, @p216, @p217, @p218, @p219, @p220, @p221, @p222, @p223, @p224, @p225, @p226, @p227)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p228, @p229, @p230, @p231, @p232, @p233, @p234, @p235, @p236, @p237, @p238, @p239, @p240, @p241, @p242, @p243, @p244, @p245, @p246)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p247, @p248, @p249, @p250, @p251, @p252, @p253, @p254, @p255, @p256, @p257, @p258, @p259, @p260, @p261, @p262, @p263, @p264, @p265)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p266, @p267, @p268, @p269, @p270, @p271, @p272, @p273, @p274, @p275, @p276, @p277, @p278, @p279, @p280, @p281, @p282, @p283, @p284)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p285, @p286, @p287, @p288, @p289, @p290, @p291, @p292, @p293, @p294, @p295, @p296, @p297, @p298, @p299, @p300, @p301, @p302, @p303)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p304, @p305, @p306, @p307, @p308, @p309, @p310, @p311, @p312, @p313, @p314, @p315, @p316, @p317, @p318, @p319, @p320, @p321, @p322)
+      RETURNING "IsActive";
+      INSERT INTO "Products" ("Id", "Attributes", "CategoryId", "CreatedAt", "Description", "DropPrice", "MainImageUrl", "MetaDescription", "MetaTitle", "Name", "OldPrice", "Price", "Sku", "Slug", "Stock", "StockUpdatedAt", "SupplierId", "UpdatedAt", "WeightKg")
+      VALUES (@p323, @p324, @p325, @p326, @p327, @p328, @p329, @p330, @p331, @p332, @p333, @p334, @p335, @p336, @p337, @p338, @p339, @p340, @p341)
+      RETURNING "IsActive";
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p342, @p343, @p344, @p345, @p346);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p347, @p348, @p349, @p350, @p351);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p352, @p353, @p354, @p355, @p356);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p357, @p358, @p359, @p360, @p361);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p362, @p363, @p364, @p365, @p366);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p367, @p368, @p369, @p370, @p371);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p372, @p373, @p374, @p375, @p376);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p377, @p378, @p379, @p380, @p381);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p382, @p383, @p384, @p385, @p386);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p387, @p388, @p389, @p390, @p391);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p392, @p393, @p394, @p395, @p396);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p397, @p398, @p399, @p400, @p401);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p402, @p403, @p404, @p405, @p406);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p407, @p408, @p409, @p410, @p411);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p412, @p413, @p414, @p415, @p416);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p417, @p418, @p419, @p420, @p421);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p422, @p423, @p424, @p425, @p426);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p427, @p428, @p429, @p430, @p431);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p432, @p433, @p434, @p435, @p436);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p437, @p438, @p439, @p440, @p441);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p442, @p443, @p444, @p445, @p446);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p447, @p448, @p449, @p450, @p451);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p452, @p453, @p454, @p455, @p456);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p457, @p458, @p459, @p460, @p461);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p462, @p463, @p464, @p465, @p466);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p467, @p468, @p469, @p470, @p471);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p472, @p473, @p474, @p475, @p476);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p477, @p478, @p479, @p480, @p481);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p482, @p483, @p484, @p485, @p486);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p487, @p488, @p489, @p490, @p491);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p492, @p493, @p494, @p495, @p496);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p497, @p498, @p499, @p500, @p501);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p502, @p503, @p504, @p505, @p506);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p507, @p508, @p509, @p510, @p511);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p512, @p513, @p514, @p515, @p516);
+      INSERT INTO "ProductImages" ("Id", "Alt", "ProductId", "SortOrder", "Url")
+      VALUES (@p517, @p518, @p519, @p520, @p521);
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5062
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: F:\EcommerceBackend
+warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (55ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."FilterSchema", c."IsActive", c."MetaDescription", c."MetaTitle", c."Name", c."ParentId", c."Slug", c."SortOrder", c0."Id", c0."FilterSchema", c0."IsActive", c0."MetaDescription", c0."MetaTitle", c0."Name", c0."ParentId", c0."Slug", c0."SortOrder"
+      FROM "Categories" AS c
+      LEFT JOIN "Categories" AS c0 ON c."ParentId" = c0."Id"
+      ORDER BY c."SortOrder", c."Name"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (58ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT count(*)::int
+      FROM "Products" AS p
+      WHERE p."IsActive"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (52ms) [Parameters=[@__p_1='?' (DbType = Int32), @__p_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+      SELECT t."Id", t."Attributes", t."CategoryId", t."CreatedAt", t."Description", t."DropPrice", t."IsActive", t."MainImageUrl", t."MetaDescription", t."MetaTitle", t."Name", t."OldPrice", t."Price", t."Sku", t."Slug", t."Stock", t."StockUpdatedAt", t."SupplierId", t."UpdatedAt", t."WeightKg", c."Id", c."FilterSchema", c."IsActive", c."MetaDescription", c."MetaTitle", c."Name", c."ParentId", c."Slug", c."SortOrder", p0."Id", p0."Alt", p0."ProductId", p0."SortOrder", p0."Url"
+      FROM (
+          SELECT p."Id", p."Attributes", p."CategoryId", p."CreatedAt", p."Description", p."DropPrice", p."IsActive", p."MainImageUrl", p."MetaDescription", p."MetaTitle", p."Name", p."OldPrice", p."Price", p."Sku", p."Slug", p."Stock", p."StockUpdatedAt", p."SupplierId", p."UpdatedAt", p."WeightKg"
+          FROM "Products" AS p
+          WHERE p."IsActive"
+          ORDER BY p."CreatedAt" DESC
+          LIMIT @__p_1 OFFSET @__p_0
+      ) AS t
+      INNER JOIN "Categories" AS c ON t."CategoryId" = c."Id"
+      LEFT JOIN "ProductImages" AS p0 ON t."Id" = p0."ProductId"
+      ORDER BY t."CreatedAt" DESC, t."Id", c."Id", p0."SortOrder"
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (51ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT s."Id", s."City", s."Contact", s."IsActive", s."Name", s."Notes"
+      FROM "Suppliers" AS s
+      WHERE s."IsActive"
+      ORDER BY s."Name"
