@@ -638,6 +638,26 @@ namespace EcommerceBackend.Migrations
                         .HasDatabaseName("IX_Products_Catalog")
                         .HasFilter("\"IsActive\" IS TRUE");
 
+                    b.HasIndex("CategoryId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_Products_Catalog_CreatedAt")
+                        .HasFilter("\"IsActive\" IS TRUE");
+
+                    b.HasIndex("Name")
+                        .HasDatabaseName("IX_Products_Name_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("Price")
+                        .HasDatabaseName("IX_Products_Price")
+                        .HasFilter("\"IsActive\" IS TRUE");
+
+                    b.HasIndex("Sku")
+                        .HasDatabaseName("IX_Products_Sku_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Sku"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Sku"), new[] { "gin_trgm_ops" });
                     b.ToTable("Products", null, t =>
                         {
                             t.HasCheckConstraint("Products_Stock_Price_check", "\"Stock\" >= 0 AND \"Price\" >= 0");

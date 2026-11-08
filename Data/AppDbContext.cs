@@ -130,6 +130,26 @@ public class AppDbContext : DbContext
             .HasDatabaseName("IX_Products_Catalog")
             .HasFilter("\"IsActive\" IS TRUE");
         e.HasIndex(x => x.SupplierId).HasDatabaseName("IX_Products_SupplierId");
+                // Каталог: фильтр по категории + сортировка по дате (сортировка по умолчанию date_desc)
+        e.HasIndex(x => new { x.CategoryId, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Products_Catalog_CreatedAt")
+            .HasFilter("\"IsActive\" IS TRUE");
+
+        // Сортировка по цене без фильтра по категории
+        e.HasIndex(x => x.Price)
+            .HasDatabaseName("IX_Products_Price")
+            .HasFilter("\"IsActive\" IS TRUE");
+
+        // Поиск ILIKE '%...%' по Name / Sku (нужен pg_trgm)
+        e.HasIndex(x => x.Name)
+            .HasDatabaseName("IX_Products_Name_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
+        e.HasIndex(x => x.Sku)
+            .HasDatabaseName("IX_Products_Sku_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
     }
 
     private static void ConfigureProductImages(ModelBuilder b)
