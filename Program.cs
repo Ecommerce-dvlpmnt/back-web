@@ -1,14 +1,16 @@
-﻿using EcommerceBackend.Application.Interfaces;
+using System.Diagnostics;
+using System.Text.Json.Serialization;
+using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
+using EcommerceBackend.Domain.Enums;
 using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;
-using System.Diagnostics;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -37,11 +39,21 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "in local configuration or the ConnectionStrings__Default environment variable.");
 }
 
-builder.Services.AddControllers();
+var dataSourceBuilder = new Npgsql.NpgsqlDataSourceBuilder(connectionString);
+dataSourceBuilder.MapEnum<PaymentMethod>("payment_method");
+dataSourceBuilder.MapEnum<OrderStatus>("order_status");
+dataSourceBuilder.MapEnum<PaymentStatus>("payment_status");
+dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status");
+var dataSource = dataSourceBuilder.Build();
+
+builder.Services.AddSingleton<Npgsql.NpgsqlDataSource>(_ => dataSource);
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<AppDbContext>((services, options) =>
+    options.UseNpgsql(services.GetRequiredService<Npgsql.NpgsqlDataSource>()));
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
@@ -54,7 +66,7 @@ builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
 
 builder.Services.AddSwaggerGen();
 
-// Ошибки валидации в том же формате, что и остальные.
+// Validation error formatting
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>

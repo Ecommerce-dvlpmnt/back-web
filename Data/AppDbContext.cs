@@ -24,12 +24,10 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresEnum("order_status", new[]
-            { "New", "Confirmed", "Packed", "Shipped", "Delivered", "Cancelled", "Refused", "Returned" });
-        modelBuilder.HasPostgresEnum("payment_status", new[] { "Pending", "Paid", "Failed", "Refunded" });
-        modelBuilder.HasPostgresEnum("payment_method", new[] { "CashOnDelivery", "Online" });
-        modelBuilder.HasPostgresEnum("shipment_status", new[]
-            { "Pending", "Requested", "Confirmed", "Shipped", "Problem", "Cancelled" });
+        modelBuilder.HasPostgresEnum<OrderStatus>("order_status");
+        modelBuilder.HasPostgresEnum<PaymentStatus>("payment_status");
+        modelBuilder.HasPostgresEnum<PaymentMethod>("payment_method");
+        modelBuilder.HasPostgresEnum<ShipmentStatus>("shipment_status");
 
         ConfigureSuppliers(modelBuilder);
         ConfigureCategories(modelBuilder);
