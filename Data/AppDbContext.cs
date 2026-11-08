@@ -125,23 +125,39 @@ public class AppDbContext : DbContext
 
         e.ToTable(t => t.HasCheckConstraint("Products_Stock_Price_check", "\"Stock\" >= 0 AND \"Price\" >= 0"));
 
-        e.HasIndex(x => x.Attributes).HasDatabaseName("IX_Products_Attributes").HasMethod("gin");
+        // GIN index on jsonb Attributes column (product characteristics)
+        // jsonb_path_ops is more compact and faster for the @> containment operator
+        e.HasIndex(x => x.Attributes)
+            .HasDatabaseName("IX_Products_Attributes_gin")
+            .HasMethod("gin")
+            .HasOperators("jsonb_path_ops");
+
+        // Catalog: filter by category + sort by price ASC (partial: active only)
         e.HasIndex(x => new { x.CategoryId, x.Price })
-            .HasDatabaseName("IX_Products_Catalog")
+            .IsDescending(false, false)
+            .HasDatabaseName("IX_Products_Catalog_PriceAsc")
             .HasFilter("\"IsActive\" IS TRUE");
+
+        // Catalog: filter by category + sort by price DESC (partial: active only)
+        e.HasIndex(x => new { x.CategoryId, x.Price })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Products_Catalog_PriceDesc")
+            .HasFilter("\"IsActive\" IS TRUE");
+
         e.HasIndex(x => x.SupplierId).HasDatabaseName("IX_Products_SupplierId");
-                // Каталог: фильтр по категории + сортировка по дате (сортировка по умолчанию date_desc)
+
+        // Catalog: filter by category + sort by date (default date_desc, partial: active only)
         e.HasIndex(x => new { x.CategoryId, x.CreatedAt })
             .IsDescending(false, true)
             .HasDatabaseName("IX_Products_Catalog_CreatedAt")
             .HasFilter("\"IsActive\" IS TRUE");
 
-        // Сортировка по цене без фильтра по категории
+        // Sort by price without category filter (partial: active only)
         e.HasIndex(x => x.Price)
             .HasDatabaseName("IX_Products_Price")
             .HasFilter("\"IsActive\" IS TRUE");
 
-        // Поиск ILIKE '%...%' по Name / Sku (нужен pg_trgm)
+        // ILIKE '%...%' search on Name / Sku (requires pg_trgm extension)
         e.HasIndex(x => x.Name)
             .HasDatabaseName("IX_Products_Name_trgm")
             .HasMethod("gin")
