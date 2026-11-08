@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Products;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EcommerceBackend.Controllers;
@@ -11,7 +12,7 @@ public sealed class ProductsController(IProductService productService) : Control
 {
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<ProductDto>>> GetAll(
         [FromQuery] ProductQueryParameters query,
         CancellationToken cancellationToken)
@@ -39,50 +40,28 @@ public sealed class ProductsController(IProductService productService) : Control
 
     [HttpPost]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductDto>> Create(
         [FromBody] CreateProductDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var product = await productService.CreateAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(new ProblemDetails { Title = "Invalid product data", Detail = exception.Message });
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Product conflict", Detail = exception.Message });
-        }
+        var product = await productService.CreateAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductDto>> Update(
         Guid id,
         [FromBody] UpdateProductDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var product = await productService.UpdateAsync(id, request, cancellationToken);
-            return product is null ? NotFound() : Ok(product);
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(new ProblemDetails { Title = "Invalid product data", Detail = exception.Message });
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Product conflict", Detail = exception.Message });
-        }
+        var product = await productService.UpdateAsync(id, request, cancellationToken);
+        return product is null ? NotFound() : Ok(product);
     }
 
     [HttpDelete("{id:guid}")]

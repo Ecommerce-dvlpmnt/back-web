@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Categories;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EcommerceBackend.Controllers;
@@ -11,7 +12,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
 {
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetAll(
         [FromQuery] bool? onlyActive,
         CancellationToken cancellationToken)
@@ -39,66 +40,37 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
 
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> Create(
         [FromBody] CreateCategoryDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var category = await categoryService.CreateAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = category.Id }, category);
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(new ProblemDetails { Title = "Invalid category data", Detail = exception.Message });
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Category conflict", Detail = exception.Message });
-        }
+        var category = await categoryService.CreateAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = category.Id }, category);
     }
 
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> Update(
         Guid id,
         [FromBody] UpdateCategoryDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var category = await categoryService.UpdateAsync(id, request, cancellationToken);
-            return category is null ? NotFound() : Ok(category);
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(new ProblemDetails { Title = "Invalid category data", Detail = exception.Message });
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Category conflict", Detail = exception.Message });
-        }
+        var category = await categoryService.UpdateAsync(id, request, cancellationToken);
+        return category is null ? NotFound() : Ok(category);
     }
 
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            var deleted = await categoryService.DeleteAsync(id, cancellationToken);
-            return deleted ? NoContent() : NotFound();
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Category is not empty", Detail = exception.Message });
-        }
+        var deleted = await categoryService.DeleteAsync(id, cancellationToken);
+        return deleted ? NoContent() : NotFound();
     }
 }

@@ -3,8 +3,31 @@ using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
 using EcommerceBackend.Infrastructure.Storage;
+using EcommerceBackend.Middleware;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
+using Serilog.Events;
+using System.Diagnostics;
+
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .MinimumLevel.Is(context.HostingEnvironment.IsDevelopment()
+        ? LogEventLevel.Debug
+        : LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/app-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -30,7 +53,31 @@ builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
 
 builder.Services.AddSwaggerGen();
 
+// Ошибки валидации в том же формате, что и остальные.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(entry => entry.Value?.Errors.Count > 0)
+            .ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value!.Errors.Select(error => error.ErrorMessage).ToArray());
+
+        return new BadRequestObjectResult(new
+        {
+            code = StatusCodes.Status400BadRequest,
+            message = "Validation failed.",
+            errors,
+            traceId = Activity.Current?.TraceId.ToString() ?? context.HttpContext.TraceIdentifier
+        });
+    };
+});
+
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+app.UseSerilogRequestLogging();
 
 var migrateOnStartup = app.Configuration.GetValue<bool>("Database:MigrateOnStartup");
 if (migrateOnStartup)
