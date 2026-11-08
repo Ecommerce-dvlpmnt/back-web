@@ -9,6 +9,7 @@ using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Serilog;
 using Serilog.Events;
 
@@ -39,21 +40,22 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "in local configuration or the ConnectionStrings__Default environment variable.");
 }
 
-var dataSourceBuilder = new Npgsql.NpgsqlDataSourceBuilder(connectionString);
-dataSourceBuilder.MapEnum<PaymentMethod>("payment_method");
-dataSourceBuilder.MapEnum<OrderStatus>("order_status");
-dataSourceBuilder.MapEnum<PaymentStatus>("payment_status");
-dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status");
+var nameTranslator = new ExactMatchNameTranslator();
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+dataSourceBuilder.MapEnum<PaymentMethod>("payment_method", nameTranslator);
+dataSourceBuilder.MapEnum<OrderStatus>("order_status", nameTranslator);
+dataSourceBuilder.MapEnum<PaymentStatus>("payment_status", nameTranslator);
+dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status", nameTranslator);
 var dataSource = dataSourceBuilder.Build();
 
-builder.Services.AddSingleton<Npgsql.NpgsqlDataSource>(_ => dataSource);
+builder.Services.AddSingleton<NpgsqlDataSource>(_ => dataSource);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddDbContext<AppDbContext>((services, options) =>
-    options.UseNpgsql(services.GetRequiredService<Npgsql.NpgsqlDataSource>()));
+    options.UseNpgsql(services.GetRequiredService<NpgsqlDataSource>()));
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
@@ -129,3 +131,13 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
 app.MapControllers();
 
 app.Run();
+
+/// <summary>
+/// Preserves exact PascalCase names (e.g. "New", "CashOnDelivery") as defined in PostgreSQL enums,
+/// preventing default snake_case translation.
+/// </summary>
+public sealed class ExactMatchNameTranslator : INpgsqlNameTranslator
+{
+    public string TranslateTypeName(string clrName) => clrName;
+    public string TranslateMemberName(string clrName) => clrName;
+}
