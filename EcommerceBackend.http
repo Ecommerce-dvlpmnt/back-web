@@ -184,6 +184,22 @@ Content-Type: application/json
   ]
 }
 
+### Проверить отказ при заказе товара сверх доступного остатка (ожидается 409)
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "customerFirstName": "Тест",
+  "customerLastName": "Покупатель",
+  "customerPhone": "+380000000000",
+  "items": [
+    {
+      "productId": "{{createProduct.response.body.$.id}}",
+      "quantity": 9999
+    }
+  ]
+}
+
 ### Удалить созданный товар
 DELETE {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using EcommerceBackend.Application.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -51,13 +52,16 @@ public sealed class GlobalExceptionHandlingMiddleware(
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
-        var payload = new ErrorResponse(statusCode, message, traceId);
+        object payload = exception is InsufficientStockException stockException
+            ? new StockConflictResponse(statusCode, message, stockException.Items, traceId)
+            : new ErrorResponse(statusCode, message, traceId);
         await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
     }
 
     // Соответствие исключения и HTTP-кода.
     private static (int StatusCode, string Message) Map(Exception exception) => exception switch
     {
+        InsufficientStockException => (StatusCodes.Status409Conflict, exception.Message),
         ArgumentException => (StatusCodes.Status400BadRequest, exception.Message),
         KeyNotFoundException => (StatusCodes.Status404NotFound, exception.Message),
         InvalidOperationException => (StatusCodes.Status409Conflict, exception.Message),
