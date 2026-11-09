@@ -19,6 +19,13 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()
+    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .ToArray() ?? [];
+var defaultOrigins = new[] { "http://localhost:3000", "http://localhost:5173" };
+
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .MinimumLevel.Is(context.HostingEnvironment.IsDevelopment()
         ? LogEventLevel.Debug
@@ -49,6 +56,24 @@ dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status", nameTranslator);
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddSingleton<NpgsqlDataSource>(_ => dataSource);
+builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
+{
+    if (allowedOrigins.Length > 0)
+    {
+        policy.WithOrigins(allowedOrigins);
+    }
+    else if (builder.Environment.IsDevelopment())
+    {
+        policy.AllowAnyOrigin();
+    }
+    else
+    {
+        policy.WithOrigins(defaultOrigins);
+    }
+
+    policy.AllowAnyMethod().AllowAnyHeader();
+}));
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -121,6 +146,8 @@ if (swaggerEnabled)
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
+
+app.UseCors("Frontend");
 
 app.UseAuthorization();
 
