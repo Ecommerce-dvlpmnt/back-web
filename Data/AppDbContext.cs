@@ -24,12 +24,10 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresEnum("order_status", new[]
-            { "New", "Confirmed", "Packed", "Shipped", "Delivered", "Cancelled", "Refused", "Returned" });
-        modelBuilder.HasPostgresEnum("payment_status", new[] { "Pending", "Paid", "Failed", "Refunded" });
-        modelBuilder.HasPostgresEnum("payment_method", new[] { "CashOnDelivery", "Online" });
-        modelBuilder.HasPostgresEnum("shipment_status", new[]
-            { "Pending", "Requested", "Confirmed", "Shipped", "Problem", "Cancelled" });
+        modelBuilder.HasPostgresEnum<OrderStatus>("order_status");
+        modelBuilder.HasPostgresEnum<PaymentStatus>("payment_status");
+        modelBuilder.HasPostgresEnum<PaymentMethod>("payment_method");
+        modelBuilder.HasPostgresEnum<ShipmentStatus>("shipment_status");
 
         ConfigureSuppliers(modelBuilder);
         ConfigureCategories(modelBuilder);
@@ -125,11 +123,47 @@ public class AppDbContext : DbContext
 
         e.ToTable(t => t.HasCheckConstraint("Products_Stock_Price_check", "\"Stock\" >= 0 AND \"Price\" >= 0"));
 
-        e.HasIndex(x => x.Attributes).HasDatabaseName("IX_Products_Attributes").HasMethod("gin");
+        // GIN index on jsonb Attributes column (product characteristics)
+        // jsonb_path_ops is more compact and faster for the @> containment operator
+        e.HasIndex(x => x.Attributes)
+            .HasDatabaseName("IX_Products_Attributes_gin")
+            .HasMethod("gin")
+            .HasOperators("jsonb_path_ops");
+
+        // Catalog: filter by category + sort by price ASC (partial: active only)
         e.HasIndex(x => new { x.CategoryId, x.Price })
-            .HasDatabaseName("IX_Products_Catalog")
+            .IsDescending(false, false)
+            .HasDatabaseName("IX_Products_Catalog_PriceAsc")
             .HasFilter("\"IsActive\" IS TRUE");
+
+        // Catalog: filter by category + sort by price DESC (partial: active only)
+        e.HasIndex(x => new { x.CategoryId, x.Price })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Products_Catalog_PriceDesc")
+            .HasFilter("\"IsActive\" IS TRUE");
+
         e.HasIndex(x => x.SupplierId).HasDatabaseName("IX_Products_SupplierId");
+
+        // Catalog: filter by category + sort by date (default date_desc, partial: active only)
+        e.HasIndex(x => new { x.CategoryId, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Products_Catalog_CreatedAt")
+            .HasFilter("\"IsActive\" IS TRUE");
+
+        // Sort by price without category filter (partial: active only)
+        e.HasIndex(x => x.Price)
+            .HasDatabaseName("IX_Products_Price")
+            .HasFilter("\"IsActive\" IS TRUE");
+
+        // ILIKE '%...%' search on Name / Sku (requires pg_trgm extension)
+        e.HasIndex(x => x.Name)
+            .HasDatabaseName("IX_Products_Name_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
+        e.HasIndex(x => x.Sku)
+            .HasDatabaseName("IX_Products_Sku_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
     }
 
     private static void ConfigureProductImages(ModelBuilder b)

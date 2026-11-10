@@ -1,13 +1,18 @@
 @hostname = localhost
 @port = 5062
 @baseUrl = http://{{hostname}}:{{port}}
-@supplierId = 00000000-0000-0000-0000-000000000001
+@supplierId = ee4c03fb-d275-4614-8cac-504493cfed52
 
-### Получить все активные категории
+### 1. Справочник поставщиков (проверка, что id выше реальный)
+# @name getSuppliers
+GET {{baseUrl}}/api/suppliers
+Accept: application/json
+
+### 2. Получить все активные категории
 GET {{baseUrl}}/api/categories?onlyActive=true
 Accept: application/json
 
-### Создать категорию
+### 3. Создать категорию
 # Запрос создает категорию; ее ID используется в последующих запросах.
 # Перед запуском измените slug, если novogodnie-ukrasheniya уже существует.
 # @name createCategory
@@ -25,15 +30,30 @@ Content-Type: application/json
   "metaDescription": "Ёлки, гирлянды и ёлочные игрушки"
 }
 
-### Получить созданную категорию по ID
+### 4. Получить созданную категорию по ID
 GET {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
 Accept: application/json
 
-### Найти категорию по slug
+### 5. Найти категорию по slug (до переименования)
 GET {{baseUrl}}/api/categories/by-slug/novogodnie-ukrasheniya
 Accept: application/json
 
-### Полностью обновить созданную категорию
+### 6. ОШИБКА: создать категорию с уже занятым slug (ожидается 409 Conflict)
+# До PUT-переименования категория ещё держит исходный slug, поэтому
+# POST с "novogodnie-ukrasheniya" обязан вернуть 409 Conflict.
+POST {{baseUrl}}/api/categories
+Content-Type: application/json
+
+{
+  "name": "Дубль категории",
+  "slug": "{{createCategory.response.body.$.slug}}",
+  "parentId": null,
+  "sortOrder": 1,
+  "isActive": true
+}
+
+### 7. Полностью обновить созданную категорию
+# @name updateCategory
 PUT {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
 Content-Type: application/json
 
@@ -48,11 +68,27 @@ Content-Type: application/json
   "metaDescription": "Всё для праздничного украшения дома"
 }
 
-### Получить все товары (с пагинацией и сортировкой по умолчанию)
+### 8. Найти категорию по slug (после переименования)
+GET {{baseUrl}}/api/categories/by-slug/elki-girlyandy-igrushki
+Accept: application/json
+
+### 9. Получить все товары (с пагинацией и сортировкой по умолчанию)
 GET {{baseUrl}}/api/products
 Accept: application/json
 
-### Создать искусственную ёлку в новогодней категории
+### 10. Каталог: поиск по слову
+GET {{baseUrl}}/api/products?Search=гирлянда
+Accept: application/json
+
+### 11. Каталог: сортировка по возрастанию цены
+GET {{baseUrl}}/api/products?SortBy=price_asc
+Accept: application/json
+
+### 12. Каталог: пагинация — страница 2 по 5 товаров
+GET {{baseUrl}}/api/products?PageNumber=2&PageSize=5
+Accept: application/json
+
+### 13. Создать искусственную ёлку в новогодней категории
 # Укажите ID существующего поставщика в переменной supplierId в начале файла.
 # @name createProduct
 POST {{baseUrl}}/api/products
@@ -84,7 +120,7 @@ Content-Type: application/json
   ]
 }
 
-### Создать светодиодную гирлянду в новогодней категории
+### 14. Создать светодиодную гирлянду в новогодней категории
 # @name createGarland
 POST {{baseUrl}}/api/products
 Content-Type: application/json
@@ -115,7 +151,7 @@ Content-Type: application/json
   ]
 }
 
-### Создать набор ёлочных игрушек в новогодней категории
+### 15. Создать набор ёлочных игрушек в новогодней категории
 # @name createOrnaments
 POST {{baseUrl}}/api/products
 Content-Type: application/json
@@ -146,15 +182,18 @@ Content-Type: application/json
   ]
 }
 
-### Получить созданный товар по ID
+### 16. ОШИБКА: удалить категорию, в которой есть товары (ожидается 409 Conflict)
+DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+
+### 17. Получить созданный товар по ID
 GET {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
 Accept: application/json
 
-### Найти товар по slug
+### 18. Найти товар по slug
 GET {{baseUrl}}/api/products/by-slug/iskusstvennaya-elka-180-sm
 Accept: application/json
 
-### Полностью обновить созданный товар
+### 19. Полностью обновить созданный товар
 PUT {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
 Content-Type: application/json
 
@@ -184,14 +223,77 @@ Content-Type: application/json
   ]
 }
 
-### Удалить созданный товар
+### 20. Проверить отказ при заказе товара сверх доступного остатка (ожидается 409)
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "customerFirstName": "Тест",
+  "customerLastName": "Покупатель",
+  "customerPhone": "+380000000000",
+  "items": [
+    {
+      "productId": "{{createProduct.response.body.$.id}}",
+      "quantity": 9999
+    }
+  ]
+}
+
+### 21. ОШИБКА: получить несуществующий товар по id (ожидается 404 Not Found)
+GET {{baseUrl}}/api/products/00000000-0000-0000-0000-000000000009
+Accept: application/json
+
+### 22. ОШИБКА: создать товар с несуществующим поставщиком (ожидается 400 Bad Request)
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+
+{
+  "categoryId": "{{createCategory.response.body.$.id}}",
+  "supplierId": "00000000-0000-0000-0000-000000000009",
+  "sku": "DEMO-ERR-SUPPLIER-001",
+  "name": "Тест несуществующего поставщика",
+  "slug": "test-nesuschestvuyuschego-postavschika",
+  "price": 100.00,
+  "stock": 1,
+  "isActive": true
+}
+
+### 23. ОШИБКА: создать поставщика с пустым именем (ожидается 400 Bad Request с полем errors)
+POST {{baseUrl}}/api/suppliers
+Content-Type: application/json
+
+{
+  "name": "",
+  "contact": "+380000000000"
+}
+
+### 24. Загрузить изображение товара (multipart/form-data, ожидается 200 OK)
+# @name uploadImage
+POST {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}/images
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test-image.png"
+Content-Type: image/png
+
+< ./test-assets/test-image.png
+--WebAppBoundary
+Content-Disposition: form-data; name="isMainImage"
+
+false
+--WebAppBoundary--
+
+### 25. ОШИБКА: удалить несуществующий товар (ожидается 404 Not Found)
+DELETE {{baseUrl}}/api/products/00000000-0000-0000-0000-000000000009
+
+### 26. Удалить созданный товар
 DELETE {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
 
-### Удалить созданную гирлянду
+### 27. Удалить созданную гирлянду
 DELETE {{baseUrl}}/api/products/{{createGarland.response.body.$.id}}
 
-### Удалить созданные ёлочные игрушки
+### 28. Удалить созданные ёлочные игрушки
 DELETE {{baseUrl}}/api/products/{{createOrnaments.response.body.$.id}}
 
-### Удалить созданную категорию
+### 29. Удалить созданную категорию
 DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}

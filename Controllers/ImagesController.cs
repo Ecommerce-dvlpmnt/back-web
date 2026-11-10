@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Products;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EcommerceBackend.Controllers;
@@ -12,38 +13,19 @@ public sealed class ImagesController(IProductService productService) : Controlle
     [HttpPost]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProductDto>> UploadProductImage(
         Guid productId,
         [FromForm] UploadProductImageDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var product = await productService.UploadImageToProductAsync(
-                productId,
-                request.File,
-                request.IsMainImage,
-                cancellationToken);
+        var product = await productService.UploadImageToProductAsync(
+            productId,
+            request.File,
+            request.IsMainImage,
+            cancellationToken);
 
-            return Ok(product);
-        }
-        catch (ArgumentException exception)
-        {
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Invalid image",
-                Detail = exception.Message
-            });
-        }
-        catch (KeyNotFoundException exception)
-        {
-            return NotFound(new ProblemDetails
-            {
-                Title = "Product not found",
-                Detail = exception.Message
-            });
-        }
+        return Ok(product);
     }
 }

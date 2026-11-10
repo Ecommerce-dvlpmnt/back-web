@@ -37,14 +37,7 @@ public sealed class SuppliersController(ISupplierService supplierService) : Cont
         [FromBody] CreateSupplierDto request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var supplier = await supplierService.CreateAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Conflict(new ProblemDetails { Title = "Supplier conflict", Detail = exception.Message });
-        }
+        var supplier = await supplierService.CreateAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
     }
 }

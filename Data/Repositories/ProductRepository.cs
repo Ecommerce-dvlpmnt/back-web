@@ -93,6 +93,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         foreach (var image in product.Images)
         {
             image.ProductId = existing.Id;
+            dbContext.ProductImages.Add(image);
             existing.Images.Add(image);
         }
 
@@ -116,7 +117,10 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         if (image is null)
             product.MainImageUrl = mainImageUrl;
         else
+        {
+            dbContext.ProductImages.Add(image);
             product.Images.Add(image);
+        }
 
         product.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
