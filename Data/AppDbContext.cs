@@ -371,16 +371,17 @@ public class AppDbContext : DbContext
         e.ToTable("Admins");
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.Username).HasColumnName("Username").HasMaxLength(30).IsRequired();
         e.Property(x => x.Name).HasColumnName("Name").HasMaxLength(100).IsRequired();
-        e.Property(x => x.Email).HasColumnName("Email").HasMaxLength(150).IsRequired();
+        e.Property(x => x.Email).HasColumnName("Email").HasMaxLength(150);
         e.Property(x => x.PasswordHash).HasColumnName("PasswordHash").HasMaxLength(255).IsRequired();
         e.Property(x => x.TelegramId).HasColumnName("TelegramId");
-        e.Property(x => x.Role).HasColumnName("Role").HasMaxLength(50).HasDefaultValue("Manager");
+        e.Property(x => x.Role).HasColumnName("Role").HasMaxLength(50).HasDefaultValue("Admin");
         e.Property(x => x.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-        e.HasIndex(x => x.Email).IsUnique().HasDatabaseName("Admins_Email_key");
+        e.HasIndex(x => x.Username).IsUnique().HasDatabaseName("Admins_Username_key");
         e.HasIndex(x => x.TelegramId).IsUnique().HasDatabaseName("Admins_TelegramId_key");
     }
 

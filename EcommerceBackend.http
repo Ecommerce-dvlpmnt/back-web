@@ -327,67 +327,71 @@ Accept: application/json
 
 
 ### =========================================================================
-### Админка: JWT Авторизация и Управление (Admin & Manager)
+### Админка: JWT Авторизация по никнеймам (Admin & Manager)
 ### =========================================================================
 
-### 33. Вход администратора (Получение JWT токена)
+### 33. Вход администратора gryftd (Получение JWT токена)
 # @name adminLogin
 POST {{baseUrl}}/api/admin/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@ecommerce.local",
+  "username": "gryftd",
   "password": "Admin12345!"
 }
 
 ###
 @adminToken = {{adminLogin.response.body.$.token}}
 
-### 34. Получить профиль текущего администратора (Bearer Token)
+### 34. Вход администратора Nesh10n
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "Nesh10n",
+  "password": "Admin12345!"
+}
+
+### 35. Вход администратора var404
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "var404",
+  "password": "Admin12345!"
+}
+
+### 36. Вход администратора gdm1234
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "gdm1234",
+  "password": "Admin12345!"
+}
+
+### 37. Получить профиль текущего администратора (Bearer Token)
 GET {{baseUrl}}/api/admin/auth/me
 Authorization: Bearer {{adminToken}}
 Accept: application/json
 
-### 35. ОШИБКА: Запрос без токена к защищённому эндпоинту (ожидается 401 Unauthorized)
-GET {{baseUrl}}/api/admin/auth/me
-Accept: application/json
-
-### 36. Получить список всех администраторов и менеджеров (требуется роль Admin)
+### 38. Получить список всех администраторов (требуется роль Admin)
 GET {{baseUrl}}/api/admin/auth/admins
 Authorization: Bearer {{adminToken}}
 Accept: application/json
 
-### 37. Создать нового менеджера (требуется роль Admin)
+### 39. Создать нового сотрудника (требуется роль Admin)
 # @name createManager
 POST {{baseUrl}}/api/admin/auth/admins
 Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
-  "name": "Новый Менеджер",
-  "email": "manager@ecommerce.local",
+  "username": "manager1",
+  "name": "Менеджер по заказам",
   "password": "ManagerPassword123!",
-  "role": "Manager",
-  "telegramId": 123456789
+  "role": "Manager"
 }
-
-### 38. Вход под новым менеджером
-# @name managerLogin
-POST {{baseUrl}}/api/admin/auth/login
-Content-Type: application/json
-
-{
-  "email": "manager@ecommerce.local",
-  "password": "ManagerPassword123!"
-}
-
-###
-@managerToken = {{managerLogin.response.body.$.token}}
-
-### 39. Проверка роли менеджера: доступ к списку админов запрещён (ожидается 403 Forbidden)
-GET {{baseUrl}}/api/admin/auth/admins
-Authorization: Bearer {{managerToken}}
-Accept: application/json
 
 ### 40. Смена пароля администратора
 POST {{baseUrl}}/api/admin/auth/change-password

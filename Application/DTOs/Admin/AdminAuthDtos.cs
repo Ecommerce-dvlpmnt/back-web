@@ -4,8 +4,8 @@ namespace EcommerceBackend.Application.DTOs.Admin;
 
 public sealed record AdminLoginRequest
 {
-    [Required, EmailAddress, StringLength(150)]
-    public required string Email { get; init; }
+    [Required, StringLength(30, MinimumLength = 3)]
+    public required string Username { get; init; }
 
     [Required, MinLength(6), StringLength(100)]
     public required string Password { get; init; }
@@ -19,8 +19,9 @@ public sealed record AdminLoginResponse(
 
 public sealed record AdminResponse(
     Guid Id,
+    string Username,
     string Name,
-    string Email,
+    string? Email,
     string Role,
     long? TelegramId,
     bool IsActive,
@@ -28,17 +29,20 @@ public sealed record AdminResponse(
 
 public sealed record CreateAdminRequest
 {
-    [Required, StringLength(100)]
-    public required string Name { get; init; }
+    [Required, StringLength(30, MinimumLength = 3)]
+    public required string Username { get; init; }
 
-    [Required, EmailAddress, StringLength(150)]
-    public required string Email { get; init; }
+    [StringLength(100)]
+    public string? Name { get; init; }
+
+    [EmailAddress, StringLength(150)]
+    public string? Email { get; init; }
 
     [Required, MinLength(6), StringLength(100)]
     public required string Password { get; init; }
 
     [StringLength(50)]
-    public string Role { get; init; } = "Manager";
+    public string Role { get; init; } = "Admin";
 
     public long? TelegramId { get; init; }
 }

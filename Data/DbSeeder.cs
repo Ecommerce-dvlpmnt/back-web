@@ -18,23 +18,38 @@ public static class DbSeeder
 
     private static async Task SeedAdminsAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        if (await context.Admins.AnyAsync(cancellationToken))
-            return;
-
-        var hasher = new PasswordHasher();
-        var admin = new Admin
+        var usernamesToSeed = new (string Username, string Name, string Role)[]
         {
-            Id = Guid.NewGuid(),
-            Name = "Главный Администратор",
-            Email = "admin@ecommerce.local",
-            PasswordHash = hasher.HashPassword("Admin12345!"),
-            Role = "Admin",
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            ("gryftd", "Даниил (gryftd)", "Admin"),
+            ("Nesh10n", "Саша (Nesh10n)", "Admin"),
+            ("var404", "var404", "Admin"),
+            ("gdm1234", "gdm1234", "Admin")
         };
 
-        context.Admins.Add(admin);
+        var hasher = new PasswordHasher();
+        var defaultPasswordHash = hasher.HashPassword("Admin12345!");
+        var now = DateTime.UtcNow;
+
+        foreach (var (username, name, role) in usernamesToSeed)
+        {
+            var exists = await context.Admins.AnyAsync(a => a.Username.ToLower() == username.ToLower(), cancellationToken);
+            if (!exists)
+            {
+                context.Admins.Add(new Admin
+                {
+                    Id = Guid.NewGuid(),
+                    Username = username,
+                    Name = name,
+                    Email = $"{username.ToLower()}@ecommerce.local",
+                    PasswordHash = defaultPasswordHash,
+                    Role = role,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+        }
+
         await context.SaveChangesAsync(cancellationToken);
     }
 

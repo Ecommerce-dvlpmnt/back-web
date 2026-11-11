@@ -42,7 +42,6 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("Email")
-                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("Email");
@@ -70,7 +69,7 @@ namespace EcommerceBackend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
-                        .HasDefaultValue("Manager")
+                        .HasDefaultValue("Admin")
                         .HasColumnName("Role");
 
                     b.Property<long?>("TelegramId")
@@ -83,15 +82,21 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("UpdatedAt")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-                    b.HasKey("Id");
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("Username");
 
-                    b.HasIndex("Email")
-                        .IsUnique()
-                        .HasDatabaseName("Admins_Email_key");
+                    b.HasKey("Id");
 
                     b.HasIndex("TelegramId")
                         .IsUnique()
                         .HasDatabaseName("Admins_TelegramId_key");
+
+                    b.HasIndex("Username")
+                        .IsUnique()
+                        .HasDatabaseName("Admins_Username_key");
 
                     b.ToTable("Admins", (string)null);
                 });

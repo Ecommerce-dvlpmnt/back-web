@@ -30,11 +30,16 @@ public sealed class JwtTokenService(IConfiguration configuration) : IJwtTokenSer
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, admin.Id.ToString()),
-            new(ClaimTypes.Name, admin.Name),
-            new(ClaimTypes.Email, admin.Email),
+            new(ClaimTypes.Name, admin.Username),
+            new("nickname", admin.Username),
             new(ClaimTypes.Role, admin.Role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        if (!string.IsNullOrWhiteSpace(admin.Email))
+        {
+            claims.Add(new Claim(ClaimTypes.Email, admin.Email));
+        }
 
         if (admin.TelegramId.HasValue)
         {

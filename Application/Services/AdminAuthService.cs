@@ -16,13 +16,13 @@ public sealed class AdminAuthService(
         AdminLoginRequest request,
         CancellationToken ct = default)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
+        var username = request.Username.Trim().ToLowerInvariant();
         var admin = await dbContext.Admins
-            .FirstOrDefaultAsync(a => a.Email.ToLower() == email, ct);
+            .FirstOrDefaultAsync(a => a.Username.ToLower() == username, ct);
 
         if (admin is null || !passwordHasher.VerifyPassword(request.Password, admin.PasswordHash))
         {
-            throw new UnauthorizedAccessException("Неверный email или пароль.");
+            throw new UnauthorizedAccessException("Неверный логин или пароль.");
         }
 
         if (!admin.IsActive)
@@ -49,21 +49,22 @@ public sealed class AdminAuthService(
         CreateAdminRequest request,
         CancellationToken ct = default)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-        var exists = await dbContext.Admins.AnyAsync(a => a.Email.ToLower() == email, ct);
+        var username = request.Username.Trim();
+        var exists = await dbContext.Admins.AnyAsync(a => a.Username.ToLower() == username.ToLower(), ct);
         if (exists)
         {
-            throw new InvalidOperationException($"Администратор с email '{request.Email}' уже существует.");
+            throw new InvalidOperationException($"Администратор с никнеймом '{request.Username}' уже существует.");
         }
 
         var now = DateTime.UtcNow;
         var admin = new Admin
         {
             Id = Guid.NewGuid(),
-            Name = request.Name.Trim(),
-            Email = email,
+            Username = username,
+            Name = string.IsNullOrWhiteSpace(request.Name) ? username : request.Name.Trim(),
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant(),
             PasswordHash = passwordHasher.HashPassword(request.Password),
-            Role = string.IsNullOrWhiteSpace(request.Role) ? "Manager" : request.Role.Trim(),
+            Role = string.IsNullOrWhiteSpace(request.Role) ? "Admin" : request.Role.Trim(),
             TelegramId = request.TelegramId,
             IsActive = true,
             CreatedAt = now,
@@ -80,7 +81,7 @@ public sealed class AdminAuthService(
     {
         var admins = await dbContext.Admins
             .AsNoTracking()
-            .OrderBy(a => a.Name)
+            .OrderBy(a => a.Username)
             .ToListAsync(ct);
 
         return admins.Select(ToDto).ToList();
@@ -110,6 +111,7 @@ public sealed class AdminAuthService(
 
     private static AdminResponse ToDto(Admin admin) => new(
         Id: admin.Id,
+        Username: admin.Username,
         Name: admin.Name,
         Email: admin.Email,
         Role: admin.Role,
