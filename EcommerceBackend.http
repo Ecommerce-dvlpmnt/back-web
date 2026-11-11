@@ -297,3 +297,30 @@ DELETE {{baseUrl}}/api/products/{{createOrnaments.response.body.$.id}}
 
 ### 29. Удалить созданную категорию
 DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+
+### 30. Успешно оформить заказ (ожидается 201 Created, в ответе есть publicId)
+# @name createOrder
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "customerFirstName": "Иван",
+  "customerLastName": "Петренко",
+  "customerPhone": "+380501112233",
+  "customerComment": "Позвонить за час до доставки",
+  "deliveryCityName": "Киев",
+  "items": [
+    {
+      "productId": "{{createProduct.response.body.$.id}}",
+      "quantity": 2
+    }
+  ]
+}
+
+### 31. Получить заказ по публичному идентификатору (ожидается 200 OK, без внутреннего id? нет: id тоже вернётся)
+GET {{baseUrl}}/api/orders/by-public-id/{{createOrder.response.body.$.publicId}}
+Accept: application/json
+
+### 32. Получить заказ по внутреннему GUID (ожидается 200 OK)
+GET {{baseUrl}}/api/orders/{{createOrder.response.body.$.id}}
+Accept: application/json

@@ -80,7 +80,15 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddDbContext<AppDbContext>((services, options) =>
-    options.UseNpgsql(services.GetRequiredService<NpgsqlDataSource>()));
+    options.UseNpgsql(
+        services.GetRequiredService<NpgsqlDataSource>(),
+        o =>
+        {
+            o.MapEnum<PaymentMethod>("payment_method", nameTranslator: nameTranslator);
+            o.MapEnum<OrderStatus>("order_status", nameTranslator: nameTranslator);
+            o.MapEnum<PaymentStatus>("payment_status", nameTranslator: nameTranslator);
+            o.MapEnum<ShipmentStatus>("shipment_status", nameTranslator: nameTranslator);
+        }));
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
