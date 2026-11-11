@@ -3,13 +3,21 @@ using System.ComponentModel.DataAnnotations;
 namespace EcommerceBackend.Application.DTOs.Finance;
 
 public sealed record FinancialOverviewDto(
+    decimal UsdRate,
     decimal TotalRevenue,
+    decimal TotalRevenueUsd,
     decimal TotalDropCost,
+    decimal TotalDropCostUsd,
     decimal GrossProfit,
+    decimal GrossProfitUsd,
     decimal AdBudgetInvested,
+    decimal AdBudgetInvestedUsd,
     decimal AdSpendActual,
+    decimal AdSpendActualUsd,
     decimal RemainingAdBudget,
-    decimal NetProfitToDistribute);
+    decimal RemainingAdBudgetUsd,
+    decimal NetProfitToDistribute,
+    decimal NetProfitToDistributeUsd);
 
 public sealed record PartnerShareDto(
     Guid Id,
@@ -18,8 +26,10 @@ public sealed record PartnerShareDto(
     string Name,
     string Role,
     decimal InvestedAmount,
+    decimal InvestedAmountUsd,
     decimal SharePercent,
     decimal CurrentPayout,
+    decimal CurrentPayoutUsd,
     decimal Roi);
 
 public sealed record PartnersSummaryResponse(
@@ -32,6 +42,10 @@ public sealed record CreateAdSpendRequest
     [Range(0.01, double.MaxValue, ErrorMessage = "Сума витрат повинна бути більше нуля.")]
     public decimal Amount { get; init; }
 
+    public string Currency { get; init; } = "UAH"; // "UAH" or "USD"
+
+    public decimal? CustomExchangeRate { get; init; }
+
     [Required, StringLength(100)]
     public required string Source { get; init; }
 
@@ -43,6 +57,8 @@ public sealed record CreateAdSpendRequest
 public sealed record AdSpendResponse(
     Guid Id,
     decimal Amount,
+    decimal AmountUsd,
+    decimal ExchangeRate,
     string Source,
     DateTime Date,
     string? Note,
@@ -58,6 +74,10 @@ public sealed record CreateDepositRequest
     [Range(0.01, double.MaxValue, ErrorMessage = "Сума внеску повинна бути більше нуля.")]
     public decimal Amount { get; init; }
 
+    public string Currency { get; init; } = "UAH"; // "UAH" or "USD"
+
+    public decimal? CustomExchangeRate { get; init; }
+
     public DateTime? Date { get; init; }
 
     public string? Note { get; init; }
@@ -69,6 +89,8 @@ public sealed record PartnerDepositResponse(
     string AdminUsername,
     string AdminName,
     decimal Amount,
+    decimal AmountUsd,
+    decimal ExchangeRate,
     DateTime Date,
     string? Note,
     DateTime CreatedAt);

@@ -11,9 +11,22 @@ namespace EcommerceBackend.Controllers.Admin;
 [Route("api/admin/finance")]
 [Authorize(Roles = "Admin")]
 [Produces("application/json")]
-public sealed class AdminFinanceController(IFinanceService financeService) : ControllerBase
+public sealed class AdminFinanceController(
+    IFinanceService financeService,
+    ICurrencyRateService currencyRateService) : ControllerBase
 {
-    /// <summary>Зведення по партнерським часткам, інвестиціям та розподілу чистого прибутку.</summary>
+    /// <summary>Отримати поточний офіційний курс долара (НБУ) для перерахунку та захисту від інфляції.</summary>
+    [HttpGet("exchange-rate")]
+    [ProducesResponseType(typeof(CurrencyRateInfo), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<CurrencyRateInfo>> GetExchangeRate(CancellationToken ct)
+    {
+        var rate = await currencyRateService.GetCurrentRatesAsync(ct);
+        return Ok(rate);
+    }
+
+    /// <summary>Зведення по партнерським часткам, інвестиціям та розподілу чистого прибутку (грн та USD).</summary>
     [HttpGet("partners-summary")]
     [ProducesResponseType(typeof(PartnersSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -24,7 +37,7 @@ public sealed class AdminFinanceController(IFinanceService financeService) : Con
         return Ok(summary);
     }
 
-    /// <summary>Фіксація витрат на маркетинг (Google Ads, Meta Ads, TikTok тощо).</summary>
+    /// <summary>Фіксація витрат на маркетинг (Google Ads, Meta Ads, TikTok тощо) у грн або USD.</summary>
     [HttpPost("ad-spend")]
     [ProducesResponseType(typeof(AdSpendResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -68,7 +81,7 @@ public sealed class AdminFinanceController(IFinanceService financeService) : Con
         return deleted ? NoContent() : NotFound();
     }
 
-    /// <summary>Внесення грошового депозиту партнером у рекламний бюджет.</summary>
+    /// <summary>Внесення грошового депозиту партнером у рекламний фонд (грн або USD з фіксацією курсу).</summary>
     [HttpPost("deposits")]
     [ProducesResponseType(typeof(PartnerDepositResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -89,7 +102,7 @@ public sealed class AdminFinanceController(IFinanceService financeService) : Con
         return CreatedAtAction(nameof(GetDeposits), new { id = response.Id }, response);
     }
 
-    /// <summary>Історія всіх внесених депозитів партнерів.</summary>
+    /// <summary>Історія всіх внесених депозитів партнерів з фіксацією курсу долара.</summary>
     [HttpGet("deposits")]
     [ProducesResponseType(typeof(IReadOnlyList<PartnerDepositResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -1,6 +1,6 @@
 # Документация: Админ-панель, Аналитика и Финансы партнеров (Admin API)
 
-Данный документ содержит полное описание архитектуры, финансовых формул и REST API эндпоинтов административной панели интернет-магазина.
+Данный документ содержит полное описание архитектуры, финансовых формул, мультивалютного пересчета (UAH / USD) и REST API эндпоинтов административной панели интернет-магазина.
 
 ---
 
@@ -24,6 +24,11 @@ flowchart TD
         BearerHeader --> AdminAnalytics[AdminAnalytics: /api/admin/analytics]
         BearerHeader --> AdminFinance[AdminFinance: /api/admin/finance]
     end
+
+    subgraph ExternalServices["Внешние интеграции"]
+        NbuApi["API Национального Банка Украины (НБУ)"] -->|Официальный курс USD/UAH| CurrencyService[NbuCurrencyRateService]
+        CurrencyService --> AdminFinance
+    end
 ```
 
 1. **Публичный контур витрины (`/api/...`)**:
@@ -38,25 +43,38 @@ flowchart TD
 
 ---
 
-## 2. Финансовая модель и алгоритм распределения прибыли
+## 2. Финансовая модель, мультивалютность (ГРН / USD) и защита от инфляции
 
-Модуль партнерских финансов разработан для прозрачного учета вложений 4 партнеров-фаундеров и расчета выплат.
+Модуль партнерских финансов разработан для прозрачного учета вложений 4 партнеров-фаундеров и расчета выплат с учетом инфляции и валютных колебаний курса гривны.
+
+### Интеграция с Национальным Банком Украины (НБУ):
+- Сервис [`NbuCurrencyRateService`](file:///c:/Users/danii/OneDrive/Робочий%20стіл/backend/back-web/Application/Services/NbuCurrencyRateService.cs) в реальном времени подтягивает официальный курс доллара США (`USD`) с государственного API НБУ:
+  `https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json`
+- Для защиты от сетевых сбоев курс кэшируется в памяти, а при отсутствии связи используется безопасный fallback.
+- При сохранении депозита или списания фиксируется точный курс на дату операции.
+
+### Защита от инфляции при динамических долях:
+Если один партнер внес 10 000 грн в ноябре (при курсе 41.50 грн = $240.96), а второй партнер внес 10 000 грн позже при курсе 45.00 грн ($222.22), система пересчитывает доли **в долларовом эквиваленте (USD)**. Таким образом, партнер, вложивший деньги раньше, защищен от девальвации.
 
 ### Базовые формулы:
 1. **Валовая прибыль (Gross Profit)**:
    $$\text{GrossProfit} = \text{TotalRevenue} - \text{TotalDropCost}$$
+   $$\text{GrossProfitUsd} = \frac{\text{GrossProfit}}{\text{UsdRate}}$$
    *Рассчитывается по всем действительным заказам (исключая статусы `Cancelled`, `Refused`, `Returned`).*
 2. **Чистая прибыль к распределению (Net Profit to Distribute)**:
    $$\text{NetProfitToDistribute} = \max(0, \text{GrossProfit} - \text{TotalAdSpendActual})$$
+   $$\text{NetProfitToDistributeUsd} = \max(0, \text{GrossProfitUsd} - \text{TotalAdSpendActualUsd})$$
    *Из прибыли от продаж в первую очередь окупаются реальные расходы на рекламу.*
 3. **Остаток рекламного бюджета (Remaining Ad Budget)**:
    $$\text{RemainingAdBudget} = \text{AdBudgetInvested} - \text{TotalAdSpendActual}$$
+   $$\text{RemainingAdBudgetUsd} = \text{AdBudgetInvestedUsd} - \text{TotalAdSpendActualUsd}$$
 4. **Доля партнера ($\text{SharePercent}_i$)**:
-   - **Фиксированная договоренность (Equity)**: если за партнером закреплен процент (например, за разработку бэкенда и фронтенда).
-   - **Динамическая доля от вклада**: если процент не зафиксирован жестко, бэкенд рассчитывает его пропорционально внесенным депозитам:
-     $$\text{SharePercent}_i = \frac{\text{InvestedAmount}_i}{\text{AdBudgetInvested}} \times 100\%$$
+   - **Фиксированная договоренность (Equity)**: если за партнером закреплен фиксированный процент (например, 35%, 35%, 20%, 10%).
+   - **Динамическая доля от вклада**: если процент не зафиксирован жестко, бэкенд рассчитывает его по сумме долларового эквивалента:
+     $$\text{SharePercent}_i = \frac{\text{InvestedAmountUsd}_i}{\text{AdBudgetInvestedUsd}} \times 100\%$$
 5. **Текущая выплата партнеру ($\text{CurrentPayout}_i$)**:
    $$\text{CurrentPayout}_i = \text{NetProfitToDistribute} \times \left(\frac{\text{SharePercent}_i}{100}\right)$$
+   $$\text{CurrentPayoutUsd}_i = \text{NetProfitToDistributeUsd} \times \left(\frac{\text{SharePercent}_i}{100}\right)$$
 6. **Окупаемость инвестиций ($\text{ROI}_i$)**:
    $$\text{ROI}_i = \frac{\text{CurrentPayout}_i - \text{InvestedAmount}_i}{\text{InvestedAmount}_i} \times 100\%$$
 
@@ -108,10 +126,11 @@ flowchart TD
 
 | Метод | URL | Описание |
 |---|---|---|
-| `GET` | `/api/admin/finance/partners-summary` | Сводка финансового состояния и персональные выплаты / ROI для каждого партнера команды. |
-| `POST` | `/api/admin/finance/deposits` | Внесение депозита в общий рекламный банк (`amount`, `date`, `note`, `adminId`). |
-| `GET` | `/api/admin/finance/deposits` | История всех внесенных депозитов. |
-| `POST` | `/api/admin/finance/ad-spend` | Фиксация расхода на рекламу (`amount`, `source`, `date`, `note`). |
+| `GET` | `/api/admin/finance/exchange-rate` | **Официальный курс доллара НБУ** в реальном времени (`rate`, `date`, `source`). |
+| `GET` | `/api/admin/finance/partners-summary` | **Сводка в двух валютах (UAH и USD)**: выручка, себестоимость, прибыль, рекламный банк, факт рекламы, выплаты и ROI для каждого партнера. |
+| `POST` | `/api/admin/finance/deposits` | Внесение депозита в рекламный банк (`amount`, `currency`: `"UAH"` или `"USD"`, `date`, `note`, `adminId`). Автоматически фиксирует курс валют. |
+| `GET` | `/api/admin/finance/deposits` | История всех внесенных депозитов с суммами в UAH, USD и зафиксированным курсом. |
+| `POST` | `/api/admin/finance/ad-spend` | Фиксация расхода на рекламу (`amount`, `currency`: `"UAH"` или `"USD"`, `source`, `date`, `note`). |
 | `GET` | `/api/admin/finance/ad-spend` | История списаний маркетингового бюджета. |
 | `DELETE` | `/api/admin/finance/ad-spend/{id}` | Удаление записи расхода. |
 | `PATCH` | `/api/admin/finance/partners/{adminId}` | Обновление роли партнера или его фиксированного процента. |
@@ -120,18 +139,22 @@ flowchart TD
 
 ## 4. База данных: новые таблицы и сущности
 
-В миграции `20261111183347_AddPartnerFinanceAndAdSpend` добавлены:
+В миграциях добавлены:
 
 1. **`PartnerDeposits`**:
    - `Id` (UUID, PK)
    - `AdminId` (UUID, FK к `Admins` ON DELETE CASCADE)
-   - `Amount` (numeric(12,2))
+   - `Amount` (numeric(12,2)) — сумма в гривне
+   - `AmountUsd` (numeric(12,2)) — эквивалент в USD на момент депозита
+   - `ExchangeRate` (numeric(8,4)) — курс доллара НБУ на момент операции
    - `Date` (timestamptz)
    - `Note` (text)
    - `CreatedAt` (timestamptz)
 2. **`AdSpends`**:
    - `Id` (UUID, PK)
-   - `Amount` (numeric(12,2))
+   - `Amount` (numeric(12,2)) — сумма в гривне
+   - `AmountUsd` (numeric(12,2)) — эквивалент в USD
+   - `ExchangeRate` (numeric(8,4)) — курс доллара
    - `Source` (varchar(100), например `Google Shopping`, `Meta Ads`)
    - `Date` (timestamptz)
    - `Note` (text)
@@ -145,9 +168,12 @@ flowchart TD
 
 ## 5. Инструкция по тестированию
 
-Все запросы готовы к выполнению в файле [`EcommerceBackend.http`](file:///c:/Users/danii/OneDrive/Робочий%20стіл/backend/back-web/EcommerceBackend.http):
-- Запросы **35–40**: Вход администратора, получение токена, смена пароля.
-- Запросы **46–49**: Админские товары (CRUD, быстрое обновление остатка, мягкое удаление).
-- Запросы **50–54**: Админские заказы (фильтры по датам, деталка с себестоимостью, смена статуса с возвратом на склад).
-- Запросы **55–60**: Дашборд аналитики (KPI, графики, воронка, топ товаров, остатки).
-- Запросы **61–65**: Финансы партнеров (сводка, внесение депозита, списание на рекламу).
+Все запросы с реальными ID из базы Supabase готовы к выполнению в файле [`EcommerceBackend.http`](file:///c:/Users/danii/OneDrive/Робочий%20стіл/backend/back-web/EcommerceBackend.http):
+- Запросы **1–7**: Категории и поставщики (CRUD, проверка конфликтов).
+- Запросы **8–15**: Каталог товаров витрины.
+- Запросы **16–18**: Оформление заказа клиентом и страница «Спасибо за заказ».
+- Запросы **19–23**: JWT авторизация администраторов.
+- Запросы **24–27**: Админка товаров (CRUD, быстрое обновление остатка, мягкое удаление).
+- Запросы **28–32**: Админка заказов (фильтры по датам, деталка с себестоимостью, смена статуса с возвратом на склад).
+- Запросы **33–38**: Дашборд аналитики (KPI, графики, воронка, топ товаров, остатки).
+- Запросы **39–44**: Финансы партнеров (курс НБУ, сводка UAH/USD, внесение депозита, списание на рекламу).

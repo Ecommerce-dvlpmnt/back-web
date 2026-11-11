@@ -124,6 +124,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
         }));
 
 // Repositories & Domain Services
+builder.Services.AddHttpClient<ICurrencyRateService, NbuCurrencyRateService>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();

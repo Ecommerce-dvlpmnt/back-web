@@ -40,6 +40,13 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("Amount");
 
+                    b.Property<decimal>("AmountUsd")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("AmountUsd");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamptz")
@@ -49,6 +56,13 @@ namespace EcommerceBackend.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamptz")
                         .HasColumnName("Date");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 4)
+                        .HasColumnType("numeric(8,4)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("ExchangeRate");
 
                     b.Property<string>("Note")
                         .HasColumnType("text")
@@ -636,6 +650,13 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("Amount");
 
+                    b.Property<decimal>("AmountUsd")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("AmountUsd");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamptz")
@@ -645,6 +666,13 @@ namespace EcommerceBackend.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamptz")
                         .HasColumnName("Date");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 4)
+                        .HasColumnType("numeric(8,4)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("ExchangeRate");
 
                     b.Property<string>("Note")
                         .HasColumnType("text")

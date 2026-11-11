@@ -428,6 +428,8 @@ public class AppDbContext : DbContext
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.AdminId).HasColumnName("AdminId").IsRequired();
         e.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(12, 2).IsRequired();
+        e.Property(x => x.AmountUsd).HasColumnName("AmountUsd").HasPrecision(12, 2).HasDefaultValue(0m);
+        e.Property(x => x.ExchangeRate).HasColumnName("ExchangeRate").HasPrecision(8, 4).HasDefaultValue(0m);
         e.Property(x => x.Date).HasColumnName("Date").HasColumnType("timestamptz").IsRequired();
         e.Property(x => x.Note).HasColumnName("Note");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
@@ -448,6 +450,8 @@ public class AppDbContext : DbContext
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(12, 2).IsRequired();
+        e.Property(x => x.AmountUsd).HasColumnName("AmountUsd").HasPrecision(12, 2).HasDefaultValue(0m);
+        e.Property(x => x.ExchangeRate).HasColumnName("ExchangeRate").HasPrecision(8, 4).HasDefaultValue(0m);
         e.Property(x => x.Source).HasColumnName("Source").HasMaxLength(100).IsRequired();
         e.Property(x => x.Date).HasColumnName("Date").HasColumnType("timestamptz").IsRequired();
         e.Property(x => x.Note).HasColumnName("Note");
