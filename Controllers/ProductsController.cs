@@ -17,6 +17,7 @@ public sealed class ProductsController(IProductService productService) : Control
         [FromQuery] ProductQueryParameters query,
         CancellationToken cancellationToken)
     {
+        query.OnlyActive ??= true;
         return Ok(await productService.GetAllAsync(query, cancellationToken));
     }
 

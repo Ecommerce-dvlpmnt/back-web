@@ -139,6 +139,31 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         return true;
     }
 
+    public async Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (product is null)
+            return false;
+
+        product.IsActive = false;
+        product.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> UpdateStockAsync(Guid id, int stock, CancellationToken cancellationToken = default)
+    {
+        var product = await dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (product is null)
+            return false;
+
+        product.Stock = stock;
+        product.StockUpdatedAt = DateTime.UtcNow;
+        product.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public Task<bool> ExistsBySkuOrSlugAsync(
         string sku,
         string slug,

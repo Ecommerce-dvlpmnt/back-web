@@ -139,6 +139,20 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         return order is null ? null : MapToResponse(order);
     }
 
+    public async Task<AdminOrderDetailResponse?> GetAdminOrderDetailAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.StatusHistory)
+                .ThenInclude(h => h.ChangedByAdmin)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        return order is null ? null : MapToAdminDetailResponse(order);
+    }
+
     public async Task<OrderResponse?> GetByPublicIdAsync(
         string publicId,
         CancellationToken cancellationToken = default)
@@ -168,6 +182,22 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             dbQuery = dbQuery.Where(o => o.OrderStatus == query.Status.Value);
         }
 
+        if (query.From.HasValue)
+        {
+            var fromUtc = query.From.Value.Kind == DateTimeKind.Utc
+                ? query.From.Value
+                : DateTime.SpecifyKind(query.From.Value, DateTimeKind.Utc);
+            dbQuery = dbQuery.Where(o => o.CreatedAt >= fromUtc);
+        }
+
+        if (query.To.HasValue)
+        {
+            var toUtc = query.To.Value.Kind == DateTimeKind.Utc
+                ? query.To.Value
+                : DateTime.SpecifyKind(query.To.Value, DateTimeKind.Utc);
+            dbQuery = dbQuery.Where(o => o.CreatedAt <= toUtc);
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var s = query.Search.Trim().ToLower();
@@ -176,6 +206,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                 o.CustomerFirstName.ToLower().Contains(s) ||
                 o.CustomerLastName.ToLower().Contains(s) ||
                 o.PublicId.ToLower().Contains(s) ||
+                o.OrderNumber.ToString().Contains(s) ||
                 (o.CustomerEmail != null && o.CustomerEmail.ToLower().Contains(s)));
         }
 
@@ -258,6 +289,26 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         return MapToResponse(order);
     }
 
+    public async Task<AdminOrderDetailResponse?> UpdateCommentAsync(
+        Guid id,
+        string? comment,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.StatusHistory)
+                .ThenInclude(h => h.ChangedByAdmin)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (order is null) return null;
+
+        order.AdminComment = comment;
+        order.UpdatedAt = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return MapToAdminDetailResponse(order);
+    }
+
     private static Dictionary<Guid, int> AggregateQuantities(
         IReadOnlyList<CreateOrderItemRequest> items)
     {
@@ -308,6 +359,57 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
                     item.Quantity,
                     item.UnitPrice,
                     item.UnitPrice * item.Quantity))
+                .ToArray());
+    }
+
+    private static AdminOrderDetailResponse MapToAdminDetailResponse(Order order)
+    {
+        var fullName = $"{order.CustomerFirstName} {order.CustomerLastName}".Trim();
+        if (string.IsNullOrWhiteSpace(fullName)) fullName = order.CustomerFirstName;
+
+        return new AdminOrderDetailResponse(
+            Id: order.Id,
+            OrderNumber: order.OrderNumber,
+            PublicId: order.PublicId,
+            CustomerFirstName: order.CustomerFirstName,
+            CustomerLastName: order.CustomerLastName,
+            CustomerFullName: fullName,
+            CustomerPhone: order.CustomerPhone,
+            CustomerEmail: order.CustomerEmail,
+            CustomerComment: order.CustomerComment,
+            DeliveryCityRef: order.DeliveryCityRef,
+            DeliveryCityName: order.DeliveryCityName,
+            DeliveryWarehouseRef: order.DeliveryWarehouseRef,
+            DeliveryWarehouseName: order.DeliveryWarehouseName,
+            OrderStatus: order.OrderStatus,
+            PaymentMethod: order.PaymentMethod,
+            PaymentStatus: order.PaymentStatus,
+            TotalPrice: order.TotalPrice,
+            TotalProfit: order.TotalProfit,
+            AdminComment: order.AdminComment,
+            CreatedAt: order.CreatedAt,
+            UpdatedAt: order.UpdatedAt,
+            Items: order.Items
+                .OrderBy(item => item.ProductId)
+                .Select(item => new AdminOrderItemResponse(
+                    item.ProductId,
+                    item.ProductNameSnapshot,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.UnitDropPrice,
+                    item.UnitPrice * item.Quantity,
+                    (item.UnitPrice - item.UnitDropPrice) * item.Quantity))
+                .ToArray(),
+            StatusHistory: order.StatusHistory
+                .OrderByDescending(h => h.CreatedAt)
+                .Select(h => new OrderStatusHistoryDto(
+                    h.Id,
+                    h.OldStatus,
+                    h.NewStatus,
+                    h.ChangedByAdminId,
+                    h.ChangedByAdmin != null ? (h.ChangedByAdmin.Username ?? h.ChangedByAdmin.Name) : null,
+                    h.Comment,
+                    h.CreatedAt))
                 .ToArray());
     }
 }

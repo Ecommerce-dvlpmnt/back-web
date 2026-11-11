@@ -461,3 +461,152 @@ Content-Type: application/json
   "status": "Confirmed",
   "comment": "Заказ подтверждён администратором"
 }
+
+
+
+### =========================================================================
+### Админ-панель: Управление товарами (/api/admin/products)
+### =========================================================================
+
+### 46. Админка: получить все товары (включая неактивные/скрытые)
+GET {{baseUrl}}/api/admin/products?pageNumber=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 47. Админка: детальная информация о товаре для формы редактирования
+GET {{baseUrl}}/api/admin/products/{{createProduct.response.body.$.id}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 48. Админка: быстрое обновление остатка товара на складе (PATCH /stock)
+PATCH {{baseUrl}}/api/admin/products/{{createProduct.response.body.$.id}}/stock
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "stockQuantity": 150
+}
+
+### 49. Админка: мягкое удаление товара (IsActive = false)
+DELETE {{baseUrl}}/api/admin/products/{{createProduct.response.body.$.id}}
+Authorization: Bearer {{adminToken}}
+
+
+### =========================================================================
+### Админ-панель: Управление заказами (/api/admin/orders)
+### =========================================================================
+
+### 50. Админка: список заказов с фильтрами по статусу и диапазону дат
+GET {{baseUrl}}/api/admin/orders?status=New&from=2026-01-01T00:00:00Z&pageNumber=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 51. Админка: поиск заказов по имени, телефону, email или номеру заказа
+GET {{baseUrl}}/api/admin/orders?search=Олена
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 52. Админка: полная информация о заказе (контакты, себестоимость, прибыль, история статусов)
+GET {{baseUrl}}/api/admin/orders/{{lastOrderId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 53. Админка: смена статуса заказа с записью в историю (OrderStatusHistory)
+PATCH {{baseUrl}}/api/admin/orders/{{lastOrderId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Shipped",
+  "comment": "Передано в службу доставки Новая Почта"
+}
+
+### 54. Админка: обновление внутреннего комментария администратора к заказу
+PATCH {{baseUrl}}/api/admin/orders/{{lastOrderId}}/comment
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "comment": "Клиент просил отправить до 14:00, менеджер согласовал."
+}
+
+
+
+### =========================================================================
+### Модуль 2: Аналітика та дашборд (/api/admin/analytics)
+### =========================================================================
+
+### 55. Зведені показники (Summary KPI) за сьогодні (period: today)
+GET {{baseUrl}}/api/admin/analytics/summary?period=today
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 56. Зведені показники (Summary KPI) за 7 днів (period: 7d)
+GET {{baseUrl}}/api/admin/analytics/summary?period=7d
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 57. Графік динаміки виторгу та прибутку по днях за 7 днів
+GET {{baseUrl}}/api/admin/analytics/charts/sales?period=7d&interval=day
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 58. Воронка замовлень за статусами та типами оплат
+GET {{baseUrl}}/api/admin/analytics/orders-breakdown
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 59. Топ найуспішніших товарів за продажами (limit=5)
+GET {{baseUrl}}/api/admin/analytics/top-products?limit=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 60. Алерти критичних залишків на складі (threshold <= 5 шт)
+GET {{baseUrl}}/api/admin/analytics/low-stock?threshold=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+
+### =========================================================================
+### Модуль 3: Фінанси, рекламний бюджет та частки партнерів (/api/admin/finance)
+### =========================================================================
+
+### 61. Зведення по партнерським часткам, депозитам, витратам на рекламу та ROI
+GET {{baseUrl}}/api/admin/finance/partners-summary
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 62. Внесення депозиту в рекламний фонд (Даниїл / поточний адмін вносить 10 000 грн)
+# @name addDeposit
+POST {{baseUrl}}/api/admin/finance/deposits
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "amount": 10000.00,
+  "date": "2026-11-11T00:00:00Z",
+  "note": "Поповнення рекламного фонду на Google Ads та Meta"
+}
+
+### 63. Перегляд усіх внесених депозитів партнерів
+GET {{baseUrl}}/api/admin/finance/deposits
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 64. Фіксація витрат на маркетинг (списання кабінету Google Shopping)
+# @name addAdSpend
+POST {{baseUrl}}/api/admin/finance/ad-spend
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "amount": 2800.00,
+  "source": "Google Shopping",
+  "date": "2026-11-11T00:00:00Z",
+  "note": "Поповнення кабінету Google Ads для товарної кампанії"
+}
+
+### 65. Історія витрат на рекламу
+GET {{baseUrl}}/api/admin/finance/ad-spend
+Authorization: Bearer {{adminToken}}
+Accept: application/json

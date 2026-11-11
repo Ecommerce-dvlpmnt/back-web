@@ -12,6 +12,10 @@ public interface IOrderService
         Guid id,
         CancellationToken cancellationToken = default);
 
+    Task<AdminOrderDetailResponse?> GetAdminOrderDetailAsync(
+        Guid id,
+        CancellationToken cancellationToken = default);
+
     Task<OrderResponse?> GetByPublicIdAsync(
         string publicId,
         CancellationToken cancellationToken = default);
@@ -24,5 +28,10 @@ public interface IOrderService
         Guid id,
         UpdateOrderStatusRequest request,
         Guid? adminId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminOrderDetailResponse?> UpdateCommentAsync(
+        Guid id,
+        string? comment,
         CancellationToken cancellationToken = default);
 }

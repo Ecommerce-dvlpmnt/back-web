@@ -83,8 +83,65 @@ public sealed record OrderListQuery
 {
     public OrderStatus? Status { get; init; }
     public string? Search { get; init; }
+    public DateTime? From { get; init; }
+    public DateTime? To { get; init; }
     public int PageNumber { get; init; } = 1;
     public int PageSize { get; init; } = 20;
+}
+
+/// <summary>Details of an order item for admin view (including drop price and profit).</summary>
+public sealed record AdminOrderItemResponse(
+    Guid ProductId,
+    string ProductName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal UnitDropPrice,
+    decimal LineTotal,
+    decimal LineProfit);
+
+/// <summary>Status change log entry.</summary>
+public sealed record OrderStatusHistoryDto(
+    Guid Id,
+    OrderStatus? OldStatus,
+    OrderStatus NewStatus,
+    Guid? ChangedByAdminId,
+    string? ChangedByAdminName,
+    string? Comment,
+    DateTime CreatedAt);
+
+/// <summary>Full order details for the admin view.</summary>
+public sealed record AdminOrderDetailResponse(
+    Guid Id,
+    int OrderNumber,
+    string PublicId,
+    string CustomerFirstName,
+    string CustomerLastName,
+    string CustomerFullName,
+    string CustomerPhone,
+    string? CustomerEmail,
+    string? CustomerComment,
+    string? DeliveryCityRef,
+    string? DeliveryCityName,
+    string? DeliveryWarehouseRef,
+    string? DeliveryWarehouseName,
+    OrderStatus OrderStatus,
+    PaymentMethod PaymentMethod,
+    PaymentStatus PaymentStatus,
+    decimal TotalPrice,
+    decimal TotalProfit,
+    string? AdminComment,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    IReadOnlyList<AdminOrderItemResponse> Items,
+    IReadOnlyList<OrderStatusHistoryDto> StatusHistory);
+
+/// <summary>Request to update the admin internal comment for an order.</summary>
+public sealed record UpdateOrderCommentRequest
+{
+    public string? Comment { get; init; }
+    public string? AdminComment { get; init; }
+
+    public string? GetComment() => !string.IsNullOrWhiteSpace(AdminComment) ? AdminComment : Comment;
 }
 
 /// <summary>Paginated list of orders.</summary>

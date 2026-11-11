@@ -82,12 +82,23 @@ public sealed class UpdateProductDto : CreateProductDto
 {
 }
 
+public sealed class UpdateStockDto
+{
+    [Range(0, int.MaxValue)]
+    public int? Stock { get; set; }
+
+    [Range(0, int.MaxValue)]
+    public int? StockQuantity { get; set; }
+
+    public int GetStock() => Stock ?? StockQuantity ?? 0;
+}
+
 public sealed class ProductQueryParameters
 {
     public Guid? CategoryId { get; set; }
     public Guid? SupplierId { get; set; }
     public string? Search { get; set; }
-    public bool? OnlyActive { get; set; } = true;
+    public bool? OnlyActive { get; set; }
     public string? SortBy { get; set; } = "date_desc";
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 12;

@@ -21,6 +21,8 @@ public class AppDbContext : DbContext
     public DbSet<OrderShipment> OrderShipments => Set<OrderShipment>();
     public DbSet<Admin> Admins => Set<Admin>();
     public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
+    public DbSet<PartnerDeposit> PartnerDeposits => Set<PartnerDeposit>();
+    public DbSet<AdSpend> AdSpends => Set<AdSpend>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +38,8 @@ public class AppDbContext : DbContext
         ConfigureOrderShipments(modelBuilder);
         ConfigureAdmins(modelBuilder);
         ConfigureOrderStatusHistory(modelBuilder);
+        ConfigurePartnerDeposits(modelBuilder);
+        ConfigureAdSpends(modelBuilder);
     }
 
     private static void ConfigureSuppliers(ModelBuilder b)
@@ -378,6 +382,8 @@ public class AppDbContext : DbContext
         e.Property(x => x.PasswordHash).HasColumnName("PasswordHash").HasMaxLength(255).IsRequired();
         e.Property(x => x.TelegramId).HasColumnName("TelegramId");
         e.Property(x => x.Role).HasColumnName("Role").HasMaxLength(50).HasDefaultValue("Admin");
+        e.Property(x => x.PartnerRole).HasColumnName("PartnerRole").HasMaxLength(100);
+        e.Property(x => x.FixedSharePercent).HasColumnName("FixedSharePercent").HasPrecision(5, 2);
         e.Property(x => x.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
@@ -412,6 +418,47 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.SetNull);
 
         e.HasIndex(x => x.OrderId).HasDatabaseName("IX_OrderStatusHistory_OrderId");
+    }
+
+    private static void ConfigurePartnerDeposits(ModelBuilder b)
+    {
+        var e = b.Entity<PartnerDeposit>();
+        e.ToTable("PartnerDeposits");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.AdminId).HasColumnName("AdminId").IsRequired();
+        e.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(12, 2).IsRequired();
+        e.Property(x => x.Date).HasColumnName("Date").HasColumnType("timestamptz").IsRequired();
+        e.Property(x => x.Note).HasColumnName("Note");
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasOne(x => x.Admin)
+            .WithMany(x => x.Deposits)
+            .HasForeignKey(x => x.AdminId)
+            .HasConstraintName("PartnerDeposits_AdminId_fkey")
+            .OnDelete(DeleteBehavior.Cascade);
+
+        e.HasIndex(x => x.AdminId).HasDatabaseName("IX_PartnerDeposits_AdminId");
+    }
+
+    private static void ConfigureAdSpends(ModelBuilder b)
+    {
+        var e = b.Entity<AdSpend>();
+        e.ToTable("AdSpends");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(12, 2).IsRequired();
+        e.Property(x => x.Source).HasColumnName("Source").HasMaxLength(100).IsRequired();
+        e.Property(x => x.Date).HasColumnName("Date").HasColumnType("timestamptz").IsRequired();
+        e.Property(x => x.Note).HasColumnName("Note");
+        e.Property(x => x.RecordedByAdminId).HasColumnName("RecordedByAdminId");
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasOne(x => x.RecordedByAdmin)
+            .WithMany()
+            .HasForeignKey(x => x.RecordedByAdminId)
+            .HasConstraintName("AdSpends_RecordedByAdminId_fkey")
+            .OnDelete(DeleteBehavior.SetNull);
     }
 
     public override int SaveChanges()

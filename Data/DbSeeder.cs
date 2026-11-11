@@ -18,22 +18,22 @@ public static class DbSeeder
 
     private static async Task SeedAdminsAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        var usernamesToSeed = new (string Username, string Name, string Role)[]
+        var usernamesToSeed = new (string Username, string Name, string Role, string PartnerRole, decimal FixedSharePercent)[]
         {
-            ("gryftd", "Даниил (gryftd)", "Admin"),
-            ("Nesh10n", "Саша (Nesh10n)", "Admin"),
-            ("var404", "var404", "Admin"),
-            ("gdm1234", "gdm1234", "Admin")
+            ("gryftd", "Даниил (gryftd)", "Admin", "Lead / Dev", 35.0m),
+            ("Nesh10n", "Саша (Nesh10n)", "Admin", "Dev / Backend", 35.0m),
+            ("var404", "Максим (var404)", "Admin", "Marketing", 20.0m),
+            ("gdm1234", "Партнер 4 (gdm1234)", "Admin", "Operations", 10.0m)
         };
 
         var hasher = new PasswordHasher();
         var defaultPasswordHash = hasher.HashPassword("Admin12345!");
         var now = DateTime.UtcNow;
 
-        foreach (var (username, name, role) in usernamesToSeed)
+        foreach (var (username, name, role, partnerRole, fixedSharePercent) in usernamesToSeed)
         {
-            var exists = await context.Admins.AnyAsync(a => a.Username.ToLower() == username.ToLower(), cancellationToken);
-            if (!exists)
+            var admin = await context.Admins.FirstOrDefaultAsync(a => a.Username.ToLower() == username.ToLower(), cancellationToken);
+            if (admin is null)
             {
                 context.Admins.Add(new Admin
                 {
@@ -43,10 +43,20 @@ public static class DbSeeder
                     Email = $"{username.ToLower()}@ecommerce.local",
                     PasswordHash = defaultPasswordHash,
                     Role = role,
+                    PartnerRole = partnerRole,
+                    FixedSharePercent = fixedSharePercent,
                     IsActive = true,
                     CreatedAt = now,
                     UpdatedAt = now
                 });
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(admin.PartnerRole))
+                {
+                    admin.PartnerRole = partnerRole;
+                    admin.FixedSharePercent = fixedSharePercent;
+                }
             }
         }
 
