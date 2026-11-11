@@ -1,14 +1,19 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Serialization;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Application.Security;
 using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
 using EcommerceBackend.Domain.Enums;
 using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Npgsql;
 using Serilog;
 using Serilog.Events;
@@ -74,6 +79,34 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
     policy.AllowAnyMethod().AllowAnyHeader();
 }));
 
+// JWT Authentication
+var jwtSecret = builder.Configuration["Jwt:Secret"]
+    ?? "SuperSecretAdminKeyForJwtAuthenticationMustBeAtLeast32BytesLong!";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "EcommerceBackend";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EcommerceAdmin";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -90,6 +123,8 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
             o.MapEnum<ShipmentStatus>("shipment_status", nameTranslator: nameTranslator);
         }));
 
+// Repositories & Domain Services
+builder.Services.AddHttpClient<ICurrencyRateService, NbuCurrencyRateService>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -97,9 +132,42 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IFinanceService, FinanceService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
 
-builder.Services.AddSwaggerGen();
+// Admin & Security Services
+builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
+
+// Swagger with JWT Bearer support
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Ecommerce Backend API",
+        Version = "v1"
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Введите JWT токен (без слова Bearer, Swagger добавит его сам):"
+    });
+
+    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference("Bearer", doc),
+            new List<string>()
+        }
+    });
+});
 
 // Validation error formatting
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -148,20 +216,32 @@ var swaggerEnabled = app.Environment.IsDevelopment() ||
 if (swaggerEnabled)
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "EcommerceBackend v1");
+    });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseStaticFiles();
 
 app.UseCors("Frontend");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithTags("Health")
     .WithName("HealthCheck");
+
+if (swaggerEnabled)
+{
+    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+}
 
 app.MapControllers();
 

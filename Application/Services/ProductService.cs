@@ -143,6 +143,12 @@ public sealed class ProductService(
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
         productRepository.DeleteAsync(id, cancellationToken);
 
+    public Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
+        productRepository.SoftDeleteAsync(id, cancellationToken);
+
+    public Task<bool> UpdateStockAsync(Guid id, int stock, CancellationToken cancellationToken = default) =>
+        productRepository.UpdateStockAsync(id, stock, cancellationToken);
+
     public Task<bool> ExistsBySkuOrSlugAsync(
         string sku,
         string slug,

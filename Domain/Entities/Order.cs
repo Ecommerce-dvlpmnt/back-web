@@ -11,6 +11,7 @@ public class Order : ITrackableEntity
     public string CustomerFirstName { get; set; } = null!;
     public string CustomerLastName { get; set; } = null!;
     public string CustomerPhone { get; set; } = null!;
+    public string? CustomerEmail { get; set; }
     public string? CustomerComment { get; set; }
     public string? DeliveryCityRef { get; set; }
     public string? DeliveryCityName { get; set; }

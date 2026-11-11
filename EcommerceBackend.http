@@ -1,10 +1,24 @@
 @hostname = localhost
 @port = 5062
 @baseUrl = http://{{hostname}}:{{port}}
-@supplierId = ee4c03fb-d275-4614-8cac-504493cfed52
 
-### 1. Справочник поставщиков (проверка, что id выше реальный)
-# @name getSuppliers
+# -------------------------------------------------------------------------
+# Реальные тестовые ID из базы данных Supabase (каждый запрос работает сразу в 1 клик!)
+# -------------------------------------------------------------------------
+@categoryId = 66121fb2-d362-446a-9205-fdefcaf08fef
+@supplierId = 06675cc5-f9c9-42c8-8eef-74bae08260c6
+@productId = 00818889-1692-45e8-8462-dd3d519db737
+@orderId = c2461c5f-500d-4962-b62e-8e125e02eeb3
+@orderPublicId = 686c90ce12bf427abce30ed034f919ba
+@adminDaniilId = b8fb4440-3f56-4164-852d-f0e209b32d0a
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1laWQiOiJiOGZiNDQ0MC0zZjU2LTQxNjQtODUyZC1mMGUyMDliMzJkMGEiLCJ1bmlxdWVfbmFtZSI6ImdyeWZ0ZCIsIm5pY2tuYW1lIjoiZ3J5ZnRkIiwicm9sZSI6IkFkbWluIiwianRpIjoiZGU0MWQ4MTQtM2U5ZC00OWM4LTgxMTctNTEwZmZiODdiNzE5IiwiZW1haWwiOiJncnlmdGRAZWNvbW1lcmNlLmxvY2FsIiwibmJmIjoxNzk0NDE4ODY4LCJleHAiOjE3OTQ1MDUyNjgsImlhdCI6MTc5NDQxODg2OCwiaXNzIjoiRWNvbW1lcmNlQmFja2VuZCIsImF1ZCI6IkVjb21tZXJjZUFkbWluIn0.60VGkNN0Cbw0coHBhHPmvLEKPWJfku4TWGSVVL0ppzE
+
+
+### =========================================================================
+### Категории и поставщики
+### =========================================================================
+
+### 1. Справочник поставщиков
 GET {{baseUrl}}/api/suppliers
 Accept: application/json
 
@@ -12,315 +26,360 @@ Accept: application/json
 GET {{baseUrl}}/api/categories?onlyActive=true
 Accept: application/json
 
-### 3. Создать категорию
-# Запрос создает категорию; ее ID используется в последующих запросах.
-# Перед запуском измените slug, если novogodnie-ukrasheniya уже существует.
+### 3. Создать новую категорию
 # @name createCategory
 POST {{baseUrl}}/api/categories
 Content-Type: application/json
 
 {
-  "name": "Новогодние украшения",
-  "slug": "novogodnie-ukrasheniya",
+  "name": "Праздничный декор 2026",
+  "slug": "prazdnichnyj-dekor-2026",
   "parentId": null,
   "sortOrder": 1,
   "isActive": true,
-  "filterSchema": null,
-  "metaTitle": "Новогодние украшения",
-  "metaDescription": "Ёлки, гирлянды и ёлочные игрушки"
+  "metaTitle": "Праздничный декор 2026",
+  "metaDescription": "Ёлки, гирлянды и украшения"
 }
 
-### 4. Получить созданную категорию по ID
-GET {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+### 4. Получить категорию по реальному ID
+GET {{baseUrl}}/api/categories/{{categoryId}}
 Accept: application/json
 
-### 5. Найти категорию по slug (до переименования)
-GET {{baseUrl}}/api/categories/by-slug/novogodnie-ukrasheniya
+### 5. Найти категорию по slug
+GET {{baseUrl}}/api/categories/by-slug/garlands
 Accept: application/json
 
 ### 6. ОШИБКА: создать категорию с уже занятым slug (ожидается 409 Conflict)
-# До PUT-переименования категория ещё держит исходный slug, поэтому
-# POST с "novogodnie-ukrasheniya" обязан вернуть 409 Conflict.
 POST {{baseUrl}}/api/categories
 Content-Type: application/json
 
 {
-  "name": "Дубль категории",
-  "slug": "{{createCategory.response.body.$.slug}}",
+  "name": "Дубль гирлянд",
+  "slug": "garlands",
   "parentId": null,
   "sortOrder": 1,
   "isActive": true
 }
 
-### 7. Полностью обновить созданную категорию
-# @name updateCategory
-PUT {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
+### 7. Обновить категорию по ID
+PUT {{baseUrl}}/api/categories/{{categoryId}}
 Content-Type: application/json
 
 {
-  "name": "Ёлки, гирлянды и игрушки",
-  "slug": "elki-girlyandy-igrushki",
+  "name": "Гирлянды, свет и иллюминация",
+  "slug": "garlands",
   "parentId": null,
   "sortOrder": 2,
   "isActive": true,
-  "filterSchema": null,
-  "metaTitle": "Ёлки, гирлянды и игрушки",
-  "metaDescription": "Всё для праздничного украшения дома"
+  "metaTitle": "Гирлянды, свет и иллюминация",
+  "metaDescription": "Всё для праздничного освещения дома"
 }
 
-### 8. Найти категорию по slug (после переименования)
-GET {{baseUrl}}/api/categories/by-slug/elki-girlyandy-igrushki
-Accept: application/json
 
-### 9. Получить все товары (с пагинацией и сортировкой по умолчанию)
+### =========================================================================
+### Каталог товаров (Витрина)
+### =========================================================================
+
+### 8. Получить все товары (каталог)
 GET {{baseUrl}}/api/products
 Accept: application/json
 
-### 10. Каталог: поиск по слову
+### 9. Каталог: поиск по слову
 GET {{baseUrl}}/api/products?Search=гирлянда
 Accept: application/json
 
-### 11. Каталог: сортировка по возрастанию цены
+### 10. Каталог: сортировка по возрастанию цены
 GET {{baseUrl}}/api/products?SortBy=price_asc
 Accept: application/json
 
-### 12. Каталог: пагинация — страница 2 по 5 товаров
-GET {{baseUrl}}/api/products?PageNumber=2&PageSize=5
+### 11. Каталог: пагинация — страница 1 по 5 товаров
+GET {{baseUrl}}/api/products?PageNumber=1&PageSize=5
 Accept: application/json
 
-### 13. Создать искусственную ёлку в новогодней категории
-# Укажите ID существующего поставщика в переменной supplierId в начале файла.
-# @name createProduct
+### 12. Создать новый товар (Ёлка)
 POST {{baseUrl}}/api/products
 Content-Type: application/json
 
 {
-  "categoryId": "{{createCategory.response.body.$.id}}",
+  "categoryId": "{{categoryId}}",
   "supplierId": "{{supplierId}}",
-  "sku": "DEMO-NEWYEAR-TREE-001",
-  "name": "Искусственная ёлка 180 см",
-  "slug": "iskusstvennaya-elka-180-sm",
-  "description": "Пышная искусственная ёлка для новогоднего праздника",
+  "sku": "DEMO-TREE-2026",
+  "name": "Искусственная ёлка Премиум 210 см",
+  "slug": "elka-premium-210-sm",
+  "description": "Пышная литая искусственная ёлка",
   "dropPrice": 2500.00,
-  "price": 3999.00,
-  "oldPrice": 4499.00,
-  "stock": 12,
-  "mainImageUrl": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
-  "attributes": null,
-  "metaTitle": "Искусственная ёлка 180 см",
-  "metaDescription": "Пышная искусственная ёлка для дома",
-  "weightKg": 5.5,
-  "isActive": true,
-  "images": [
-    {
-      "url": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
-      "alt": "Искусственная ёлка 180 см",
-      "sortOrder": 0
-    }
-  ]
-}
-
-### 14. Создать светодиодную гирлянду в новогодней категории
-# @name createGarland
-POST {{baseUrl}}/api/products
-Content-Type: application/json
-
-{
-  "categoryId": "{{createCategory.response.body.$.id}}",
-  "supplierId": "{{supplierId}}",
-  "sku": "DEMO-NEWYEAR-GARLAND-001",
-  "name": "Светодиодная гирлянда 10 м",
-  "slug": "svetodiodnaya-girlyanda-10-m",
-  "description": "Тёплый белый свет, 100 светодиодов",
-  "dropPrice": 350.00,
-  "price": 699.00,
-  "oldPrice": 799.00,
-  "stock": 40,
-  "mainImageUrl": "https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=1200&q=80",
-  "attributes": null,
-  "metaTitle": "Светодиодная гирлянда 10 м",
-  "metaDescription": "Гирлянда с тёплым белым светом",
-  "weightKg": 0.4,
-  "isActive": true,
-  "images": [
-    {
-      "url": "https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=1200&q=80",
-      "alt": "Светодиодная гирлянда 10 м",
-      "sortOrder": 0
-    }
-  ]
-}
-
-### 15. Создать набор ёлочных игрушек в новогодней категории
-# @name createOrnaments
-POST {{baseUrl}}/api/products
-Content-Type: application/json
-
-{
-  "categoryId": "{{createCategory.response.body.$.id}}",
-  "supplierId": "{{supplierId}}",
-  "sku": "DEMO-NEWYEAR-ORNAMENTS-001",
-  "name": "Набор ёлочных шаров, 24 шт.",
-  "slug": "nabor-elochnykh-sharov-24",
-  "description": "Набор ёлочных шаров разных цветов для праздничной ёлки",
-  "dropPrice": 450.00,
-  "price": 899.00,
-  "oldPrice": 999.00,
-  "stock": 30,
-  "mainImageUrl": "https://images.unsplash.com/photo-1512909006721-3d6018887383?auto=format&fit=crop&w=1200&q=80",
-  "attributes": null,
-  "metaTitle": "Набор ёлочных шаров, 24 шт.",
-  "metaDescription": "Набор праздничных ёлочных игрушек",
-  "weightKg": 0.8,
-  "isActive": true,
-  "images": [
-    {
-      "url": "https://images.unsplash.com/photo-1512909006721-3d6018887383?auto=format&fit=crop&w=1200&q=80",
-      "alt": "Набор ёлочных шаров",
-      "sortOrder": 0
-    }
-  ]
-}
-
-### 16. ОШИБКА: удалить категорию, в которой есть товары (ожидается 409 Conflict)
-DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
-
-### 17. Получить созданный товар по ID
-GET {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
-Accept: application/json
-
-### 18. Найти товар по slug
-GET {{baseUrl}}/api/products/by-slug/iskusstvennaya-elka-180-sm
-Accept: application/json
-
-### 19. Полностью обновить созданный товар
-PUT {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
-Content-Type: application/json
-
-{
-  "categoryId": "{{createCategory.response.body.$.id}}",
-  "supplierId": "{{supplierId}}",
-  "sku": "DEMO-NEWYEAR-TREE-001",
-  "name": "Искусственная ёлка 180 см",
-  "slug": "iskusstvennaya-elka-180-sm",
-  "description": "Пышная искусственная ёлка с прочными ветками",
-  "dropPrice": 2500.00,
-  "price": 3799.00,
-  "oldPrice": 3999.00,
+  "price": 4200.00,
+  "oldPrice": 4800.00,
   "stock": 15,
   "mainImageUrl": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
-  "attributes": null,
-  "metaTitle": "Искусственная ёлка 180 см",
-  "metaDescription": "Ёлка для праздничного украшения дома",
-  "weightKg": 5.5,
-  "isActive": true,
-  "images": [
-    {
-      "url": "https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=1200&q=80",
-      "alt": "Искусственная ёлка 180 см",
-      "sortOrder": 0
-    }
-  ]
-}
-
-### 20. Проверить отказ при заказе товара сверх доступного остатка (ожидается 409)
-POST {{baseUrl}}/api/orders
-Content-Type: application/json
-
-{
-  "customerFirstName": "Тест",
-  "customerLastName": "Покупатель",
-  "customerPhone": "+380000000000",
-  "items": [
-    {
-      "productId": "{{createProduct.response.body.$.id}}",
-      "quantity": 9999
-    }
-  ]
-}
-
-### 21. ОШИБКА: получить несуществующий товар по id (ожидается 404 Not Found)
-GET {{baseUrl}}/api/products/00000000-0000-0000-0000-000000000009
-Accept: application/json
-
-### 22. ОШИБКА: создать товар с несуществующим поставщиком (ожидается 400 Bad Request)
-POST {{baseUrl}}/api/products
-Content-Type: application/json
-
-{
-  "categoryId": "{{createCategory.response.body.$.id}}",
-  "supplierId": "00000000-0000-0000-0000-000000000009",
-  "sku": "DEMO-ERR-SUPPLIER-001",
-  "name": "Тест несуществующего поставщика",
-  "slug": "test-nesuschestvuyuschego-postavschika",
-  "price": 100.00,
-  "stock": 1,
   "isActive": true
 }
 
-### 23. ОШИБКА: создать поставщика с пустым именем (ожидается 400 Bad Request с полем errors)
-POST {{baseUrl}}/api/suppliers
+### 13. Создать светодиодную гирлянду
+POST {{baseUrl}}/api/products
 Content-Type: application/json
 
 {
-  "name": "",
-  "contact": "+380000000000"
+  "categoryId": "{{categoryId}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "DEMO-GARLAND-2026",
+  "name": "Светодиодная гирлянда Нить Роса 20 м",
+  "slug": "girlyanda-nit-rosa-20m",
+  "description": "Тёплый белый свет, 200 micro-LED",
+  "dropPrice": 280.00,
+  "price": 650.00,
+  "stock": 50,
+  "isActive": true
 }
 
-### 24. Загрузить изображение товара (multipart/form-data, ожидается 200 OK)
-# @name uploadImage
-POST {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}/images
-Content-Type: multipart/form-data; boundary=WebAppBoundary
+### 14. Получить товар по реальному ID
+GET {{baseUrl}}/api/products/{{productId}}
+Accept: application/json
 
---WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test-image.png"
-Content-Type: image/png
+### 15. Обновить товар
+PUT {{baseUrl}}/api/products/{{productId}}
+Content-Type: application/json
 
-< ./test-assets/test-image.png
---WebAppBoundary
-Content-Disposition: form-data; name="isMainImage"
+{
+  "categoryId": "{{categoryId}}",
+  "supplierId": "{{supplierId}}",
+  "sku": "NY-0008",
+  "name": "Гирлянда «Свечи» на батарейках 2 м (Обновленная)",
+  "slug": "gerlyanda-sveshi",
+  "description": "Атмосферная гирлянда для новогоднего стола",
+  "dropPrice": 150.00,
+  "price": 380.00,
+  "stock": 45,
+  "isActive": true
+}
 
-false
---WebAppBoundary--
 
-### 25. ОШИБКА: удалить несуществующий товар (ожидается 404 Not Found)
-DELETE {{baseUrl}}/api/products/00000000-0000-0000-0000-000000000009
+### =========================================================================
+### Оформление заказа (Витрина)
+### =========================================================================
 
-### 26. Удалить созданный товар
-DELETE {{baseUrl}}/api/products/{{createProduct.response.body.$.id}}
-
-### 27. Удалить созданную гирлянду
-DELETE {{baseUrl}}/api/products/{{createGarland.response.body.$.id}}
-
-### 28. Удалить созданные ёлочные игрушки
-DELETE {{baseUrl}}/api/products/{{createOrnaments.response.body.$.id}}
-
-### 29. Удалить созданную категорию
-DELETE {{baseUrl}}/api/categories/{{createCategory.response.body.$.id}}
-
-### 30. Успешно оформить заказ (ожидается 201 Created, в ответе есть publicId)
-# @name createOrder
+### 16. Оформить заказ клиентом (гостевой чекаут)
+# @name checkoutOrder
 POST {{baseUrl}}/api/orders
 Content-Type: application/json
 
 {
-  "customerFirstName": "Иван",
-  "customerLastName": "Петренко",
-  "customerPhone": "+380501112233",
-  "customerComment": "Позвонить за час до доставки",
-  "deliveryCityName": "Киев",
+  "fullName": "Олена Коваль",
+  "customerPhone": "+380991234567",
+  "customerEmail": "olena@example.com",
+  "customerComment": "Гостьове замовлення через витрину",
+  "deliveryType": "Відділення",
+  "deliveryCityName": "Київ",
+  "deliveryWarehouseName": "Відділення №12",
+  "paymentMethod": "CashOnDelivery",
   "items": [
     {
-      "productId": "{{createProduct.response.body.$.id}}",
-      "quantity": 2
+      "productId": "{{productId}}",
+      "quantity": 1
     }
   ]
 }
 
-### 31. Получить заказ по публичному идентификатору (ожидается 200 OK, без внутреннего id? нет: id тоже вернётся)
-GET {{baseUrl}}/api/orders/by-public-id/{{createOrder.response.body.$.publicId}}
+### 17. Просмотр заказа клиентом по publicId (страница «Спасибо за заказ»)
+GET {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}
 Accept: application/json
 
-### 32. Получить заказ по внутреннему GUID (ожидается 200 OK)
-GET {{baseUrl}}/api/orders/{{createOrder.response.body.$.id}}
+### 18. Получить заказ по ID
+GET {{baseUrl}}/api/orders/{{orderId}}
+Accept: application/json
+
+
+### =========================================================================
+### Админка: JWT Авторизация по логину
+### =========================================================================
+
+### 19. Вход администратора gryftd (Даниил)
+# @name adminLogin
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "gryftd",
+  "password": "Admin12345!"
+}
+
+### 20. Вход администратора Nesh10n (Саша)
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "Nesh10n",
+  "password": "Admin12345!"
+}
+
+### 21. Вход администратора var404 (Максим)
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "username": "var404",
+  "password": "Admin12345!"
+}
+
+### 22. Профиль текущего администратора (Bearer Token)
+GET {{baseUrl}}/api/admin/auth/me
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 23. Список всех администраторов команды
+GET {{baseUrl}}/api/admin/auth/admins
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+
+### =========================================================================
+### Админ-панель: Управление товарами (/api/admin/products)
+### =========================================================================
+
+### 24. Админка: получить все товары (включая неактивные/скрытые)
+GET {{baseUrl}}/api/admin/products?pageNumber=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 25. Админка: детальная информация о товаре для формы редактирования
+GET {{baseUrl}}/api/admin/products/{{productId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 26. Админка: быстрое обновление остатка товара на складе (PATCH /stock)
+PATCH {{baseUrl}}/api/admin/products/{{productId}}/stock
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "stockQuantity": 88
+}
+
+### 27. Админка: мягкое удаление товара (IsActive = false)
+DELETE {{baseUrl}}/api/admin/products/{{productId}}
+Authorization: Bearer {{adminToken}}
+
+
+### =========================================================================
+### Админ-панель: Управление заказами (/api/admin/orders)
+### =========================================================================
+
+### 28. Админка: список заказов с фильтрами по статусу и диапазону дат
+GET {{baseUrl}}/api/admin/orders?pageNumber=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 29. Админка: поиск заказов по имени или номеру телефона
+GET {{baseUrl}}/api/admin/orders?search=Олена
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 30. Админка: полная информация о заказе (контакты, себестоимость, прибыль, история статусов)
+GET {{baseUrl}}/api/admin/orders/{{orderId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 31. Админка: смена статуса заказа с записью в историю (OrderStatusHistory)
+PATCH {{baseUrl}}/api/admin/orders/{{orderId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Shipped",
+  "comment": "Передано в службу доставки Новая Почта (ТТН 20450912345678)"
+}
+
+### 32. Админка: обновление внутреннего комментария администратора к заказу
+PATCH {{baseUrl}}/api/admin/orders/{{orderId}}/comment
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "comment": "Клиент просил отправить до 14:00, согласовано менеджером."
+}
+
+
+### =========================================================================
+### Модуль аналитики дашборда (/api/admin/analytics)
+### =========================================================================
+
+### 33. Зведені показники (Summary KPI) за сьогодні (period: today)
+GET {{baseUrl}}/api/admin/analytics/summary?period=today
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 34. Зведені показники (Summary KPI) за 7 днів (period: 7d)
+GET {{baseUrl}}/api/admin/analytics/summary?period=7d
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 35. Графік динаміки виторгу та прибутку по днях за 7 днів
+GET {{baseUrl}}/api/admin/analytics/charts/sales?period=7d&interval=day
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 36. Воронка замовлень за статусами та типами оплат
+GET {{baseUrl}}/api/admin/analytics/orders-breakdown
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 37. Топ найуспішніших товарів за продажами
+GET {{baseUrl}}/api/admin/analytics/top-products?limit=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 38. Алерти критичних залишків на складі (threshold <= 5 шт)
+GET {{baseUrl}}/api/admin/analytics/low-stock?threshold=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+
+### =========================================================================
+### Модуль фінансів та часток партнерів (/api/admin/finance)
+### =========================================================================
+
+### 39. Поточний офіційний курс долара НБУ (захист від інфляції)
+GET {{baseUrl}}/api/admin/finance/exchange-rate
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 40. Зведення по партнерським часткам (в гривні та доларах США)
+GET {{baseUrl}}/api/admin/finance/partners-summary
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 41. Внесення депозиту в рекламний фонд (Даниїл вносить 10 000 грн з фіксацією курсу USD)
+POST {{baseUrl}}/api/admin/finance/deposits
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "adminId": "{{adminDaniilId}}",
+  "amount": 10000.00,
+  "currency": "UAH",
+  "date": "2026-11-11T00:00:00Z",
+  "note": "Поповнення рекламного фонду Google Ads"
+}
+
+### 42. Перегляд усіх внесених депозитів партнерів (з курсом долара на дату внесення)
+GET {{baseUrl}}/api/admin/finance/deposits
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 43. Фіксація витрат на маркетинг (списання кабінету Google Shopping у грн або USD)
+POST {{baseUrl}}/api/admin/finance/ad-spend
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "amount": 2800.00,
+  "currency": "UAH",
+  "source": "Google Shopping",
+  "date": "2026-11-11T00:00:00Z",
+  "note": "Поповнення кабінету Google Ads для товарної кампанії"
+}
+
+### 44. Історія витрат на рекламу (суми в UAH, USD та курс)
+GET {{baseUrl}}/api/admin/finance/ad-spend
+Authorization: Bearer {{adminToken}}
 Accept: application/json
