@@ -9,4 +9,5 @@ public interface IAdminAuthService
     Task<AdminResponse> CreateAsync(CreateAdminRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<AdminResponse>> GetAllAsync(CancellationToken ct = default);
     Task ChangePasswordAsync(Guid adminId, UpdateAdminPasswordRequest request, CancellationToken ct = default);
+    Task DeleteAsync(Guid id, Guid currentAdminId, CancellationToken ct = default);
 }

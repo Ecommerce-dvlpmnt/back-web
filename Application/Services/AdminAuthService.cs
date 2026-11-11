@@ -109,6 +109,32 @@ public sealed class AdminAuthService(
         await dbContext.SaveChangesAsync(ct);
     }
 
+    public async Task DeleteAsync(Guid id, Guid currentAdminId, CancellationToken ct = default)
+    {
+        if (id == currentAdminId)
+        {
+            throw new InvalidOperationException("Нельзя удалить собственную учётную запись.");
+        }
+
+        var admin = await dbContext.Admins.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (admin is null)
+        {
+            throw new KeyNotFoundException($"Администратор с ID '{id}' не найден.");
+        }
+
+        if (admin.Role == "Admin")
+        {
+            var adminCount = await dbContext.Admins.CountAsync(a => a.Role == "Admin", ct);
+            if (adminCount <= 1)
+            {
+                throw new InvalidOperationException("Нельзя удалить последнего администратора в системе.");
+            }
+        }
+
+        dbContext.Admins.Remove(admin);
+        await dbContext.SaveChangesAsync(ct);
+    }
+
     private static AdminResponse ToDto(Admin admin) => new(
         Id: admin.Id,
         Username: admin.Username,

@@ -403,6 +403,10 @@ Content-Type: application/json
   "newPassword": "NewAdminPassword123!"
 }
 
+### 40.1 Удалить администратора или менеджера по ID (требуется роль Admin)
+DELETE {{baseUrl}}/api/admin/auth/admins/{{createManager.response.body.$.id}}
+Authorization: Bearer {{adminToken}}
+
 
 ### =========================================================================
 ### Заказы: Оформление с фронтенда и управление в админке

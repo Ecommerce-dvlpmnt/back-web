@@ -86,4 +86,23 @@ public sealed class AdminAuthController(IAdminAuthService adminAuthService) : Co
         var created = await adminAuthService.CreateAsync(request, ct);
         return CreatedAtAction(nameof(GetCurrentAdmin), new { id = created.Id }, created);
     }
+
+    [HttpDelete("admins/{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteAdmin(Guid id, CancellationToken ct)
+    {
+        var adminIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(adminIdClaim) || !Guid.TryParse(adminIdClaim, out var currentAdminId))
+        {
+            return Unauthorized();
+        }
+
+        await adminAuthService.DeleteAsync(id, currentAdminId, ct);
+        return NoContent();
+    }
 }
