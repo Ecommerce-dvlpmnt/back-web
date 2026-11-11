@@ -1,0 +1,104 @@
+name: DB Backup
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: pg_dump
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check required secret
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Secret SUPABASE_DB_URL is not set (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+
+      - name: Dump database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d-%H%M%S)"
+          FILE="db-backup-${STAMP}.sql.gz"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          docker run --rm postgres:17 \
+            pg_dump "$DB_URL" \
+              --schema=public \
+              --no-owner \
+              --no-privileges \
+              --clean \
+              --if-exists \
+            | gzip -9 > "$FILE"
+          ls -lh "$FILE"
+          test -s "$FILE"
+          gunzip -t "$FILE"
+          gunzip -c "$FILE" | grep -q 'CREATE TABLE' \
+            || { echo "::error::Dump does not contain CREATE TABLE"; exit 1; }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup
+          path: ${{ env.FILE }}
+          retention-days: 90
+          if-no-files-found: error
+
+  restore-test:
+    name: Restore test
+    needs: backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore
+          POSTGRES_DB: restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restore -d restore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Download backup artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: db-backup
+
+      - name: Restore dump into clean Postgres
+        run: |
+          set -euo pipefail
+          FILE="$(ls db-backup-*.sql.gz)"
+          echo "Restoring $FILE"
+          gunzip -t "$FILE"
+          gunzip -c "$FILE" | docker run --rm -i --network host \
+            -e PGPASSWORD=restore postgres:17 \
+            psql -h 127.0.0.1 -p 5432 -U restore -d restore -v ON_ERROR_STOP=1 -q
+
+      - name: Sanity checks
+        run: |
+          set -euo pipefail
+          SQL='SELECT $$Products$$, COUNT(*) FROM "Products"
+            UNION ALL SELECT $$Categories$$, COUNT(*) FROM "Categories"
+            UNION ALL SELECT $$Suppliers$$, COUNT(*) FROM "Suppliers"
+            UNION ALL SELECT $$Orders$$, COUNT(*) FROM "Orders"
+            UNION ALL SELECT $$Migrations$$, COUNT(*) FROM "__EFMigrationsHistory"'
+          docker run --rm --network host -e PGPASSWORD=restore postgres:17 \
+            psql -h 127.0.0.1 -p 5432 -U restore -d restore -v ON_ERROR_STOP=1 -c "$SQL"
+          MIGRATIONS="$(docker run --rm --network host -e PGPASSWORD=restore postgres:17 \
+            psql -h 127.0.0.1 -p 5432 -U restore -d restore -tAc 'SELECT COUNT(*) FROM "__EFMigrationsHistory"')"
+          test "$MIGRATIONS" -ge 4 \
+            || { echo "::error::Restored DB has $MIGRATIONS migrations, expected at least 4"; exit 1; }
