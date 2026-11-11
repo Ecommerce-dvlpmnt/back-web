@@ -324,3 +324,77 @@ Accept: application/json
 ### 32. Получить заказ по внутреннему GUID (ожидается 200 OK)
 GET {{baseUrl}}/api/orders/{{createOrder.response.body.$.id}}
 Accept: application/json
+
+
+### =========================================================================
+### Админка: JWT Авторизация и Управление (Admin & Manager)
+### =========================================================================
+
+### 33. Вход администратора (Получение JWT токена)
+# @name adminLogin
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@ecommerce.local",
+  "password": "Admin12345!"
+}
+
+###
+@adminToken = {{adminLogin.response.body.$.token}}
+
+### 34. Получить профиль текущего администратора (Bearer Token)
+GET {{baseUrl}}/api/admin/auth/me
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 35. ОШИБКА: Запрос без токена к защищённому эндпоинту (ожидается 401 Unauthorized)
+GET {{baseUrl}}/api/admin/auth/me
+Accept: application/json
+
+### 36. Получить список всех администраторов и менеджеров (требуется роль Admin)
+GET {{baseUrl}}/api/admin/auth/admins
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 37. Создать нового менеджера (требуется роль Admin)
+# @name createManager
+POST {{baseUrl}}/api/admin/auth/admins
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Новый Менеджер",
+  "email": "manager@ecommerce.local",
+  "password": "ManagerPassword123!",
+  "role": "Manager",
+  "telegramId": 123456789
+}
+
+### 38. Вход под новым менеджером
+# @name managerLogin
+POST {{baseUrl}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "manager@ecommerce.local",
+  "password": "ManagerPassword123!"
+}
+
+###
+@managerToken = {{managerLogin.response.body.$.token}}
+
+### 39. Проверка роли менеджера: доступ к списку админов запрещён (ожидается 403 Forbidden)
+GET {{baseUrl}}/api/admin/auth/admins
+Authorization: Bearer {{managerToken}}
+Accept: application/json
+
+### 40. Смена пароля администратора
+POST {{baseUrl}}/api/admin/auth/change-password
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "Admin12345!",
+  "newPassword": "NewAdminPassword123!"
+}

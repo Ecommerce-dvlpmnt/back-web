@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Bogus;
+using EcommerceBackend.Application.Security;
 using EcommerceBackend.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,9 +10,32 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
+        await SeedAdminsAsync(context, cancellationToken);
         await SeedSuppliersAsync(context, cancellationToken);
         var categoryIds = await SeedCategoriesAsync(context, cancellationToken);
         await SeedProductsAsync(context, categoryIds, cancellationToken);
+    }
+
+    private static async Task SeedAdminsAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        if (await context.Admins.AnyAsync(cancellationToken))
+            return;
+
+        var hasher = new PasswordHasher();
+        var admin = new Admin
+        {
+            Id = Guid.NewGuid(),
+            Name = "Главный Администратор",
+            Email = "admin@ecommerce.local",
+            PasswordHash = hasher.HashPassword("Admin12345!"),
+            Role = "Admin",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        context.Admins.Add(admin);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task SeedSuppliersAsync(AppDbContext context, CancellationToken cancellationToken)
