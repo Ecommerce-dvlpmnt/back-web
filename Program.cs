@@ -213,7 +213,10 @@ var swaggerEnabled = app.Environment.IsDevelopment() ||
 if (swaggerEnabled)
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "EcommerceBackend v1");
+    });
 }
 
 if (!app.Environment.IsDevelopment())
@@ -231,6 +234,11 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithTags("Health")
     .WithName("HealthCheck");
+
+if (swaggerEnabled)
+{
+    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+}
 
 app.MapControllers();
 
