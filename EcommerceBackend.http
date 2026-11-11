@@ -402,3 +402,58 @@ Content-Type: application/json
   "currentPassword": "Admin12345!",
   "newPassword": "NewAdminPassword123!"
 }
+
+
+### =========================================================================
+### Заказы: Оформление с фронтенда и управление в админке
+### =========================================================================
+
+### 41. Оформить заказ точно как на странице чекаута (Олена Коваль)
+# @name checkoutOrder
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "fullName": "Олена Коваль",
+  "customerPhone": "+380991234567",
+  "customerEmail": "you@example.com",
+  "customerComment": "Гостьове замовлення",
+  "deliveryType": "Відділення",
+  "deliveryCityName": "Київ",
+  "deliveryWarehouseName": "Відділення №12",
+  "paymentMethod": "CashOnDelivery",
+  "items": [
+    {
+      "productId": "dffe61a0-d457-4527-889f-e4467909e141",
+      "quantity": 1
+    }
+  ]
+}
+
+###
+@lastOrderId = {{checkoutOrder.response.body.$.id}}
+@lastOrderPublicId = {{checkoutOrder.response.body.$.publicId}}
+
+### 42. Просмотр заказа клиентом по publicId (страница «Спасибо за заказ»)
+GET {{baseUrl}}/api/orders/by-public-id/{{lastOrderPublicId}}
+Accept: application/json
+
+### 43. Просмотр списка заказов в админке (требуется Bearer токен)
+GET {{baseUrl}}/api/orders?pageNumber=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 44. Поиск заказов по телефону или имени покупателя в админке
+GET {{baseUrl}}/api/orders?search=Коваль
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 45. Смена статуса заказа в админке (например, на Confirmed или Shipped)
+PATCH {{baseUrl}}/api/orders/{{lastOrderId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Confirmed",
+  "comment": "Заказ подтверждён администратором"
+}

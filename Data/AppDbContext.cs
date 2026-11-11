@@ -257,6 +257,7 @@ public class AppDbContext : DbContext
         e.Property(x => x.CustomerFirstName).HasColumnName("CustomerFirstName").HasMaxLength(100).IsRequired();
         e.Property(x => x.CustomerLastName).HasColumnName("CustomerLastName").HasMaxLength(100).IsRequired();
         e.Property(x => x.CustomerPhone).HasColumnName("CustomerPhone").HasMaxLength(20).IsRequired();
+        e.Property(x => x.CustomerEmail).HasColumnName("CustomerEmail").HasMaxLength(150);
         e.Property(x => x.CustomerComment).HasColumnName("CustomerComment");
         e.Property(x => x.DeliveryCityRef).HasColumnName("DeliveryCityRef").HasMaxLength(50);
         e.Property(x => x.DeliveryCityName).HasColumnName("DeliveryCityName").HasMaxLength(150);

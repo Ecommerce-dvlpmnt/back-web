@@ -15,4 +15,14 @@ public interface IOrderService
     Task<OrderResponse?> GetByPublicIdAsync(
         string publicId,
         CancellationToken cancellationToken = default);
+
+    Task<PagedOrderListResponse> GetAllAsync(
+        OrderListQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<OrderResponse> UpdateStatusAsync(
+        Guid id,
+        UpdateOrderStatusRequest request,
+        Guid? adminId = null,
+        CancellationToken cancellationToken = default);
 }

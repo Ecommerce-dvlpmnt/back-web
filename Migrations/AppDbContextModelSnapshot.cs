@@ -263,6 +263,11 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("CustomerComment");
 
+                    b.Property<string>("CustomerEmail")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("CustomerEmail");
+
                     b.Property<string>("CustomerFirstName")
                         .IsRequired()
                         .HasMaxLength(100)
