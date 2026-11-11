@@ -39,6 +39,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         var order = new Order
         {
             Id = Guid.NewGuid(),
+            PublicId = Guid.NewGuid().ToString("N"),
             CustomerFirstName = request.CustomerFirstName,
             CustomerLastName = request.CustomerLastName,
             CustomerPhone = request.CustomerPhone,
@@ -93,6 +94,18 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         return order is null ? null : MapToResponse(order);
     }
 
+    public async Task<OrderResponse?> GetByPublicIdAsync(
+        string publicId,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await dbContext.Orders
+            .AsNoTracking()
+            .Include(item => item.Items)
+            .FirstOrDefaultAsync(item => item.PublicId == publicId, cancellationToken);
+
+        return order is null ? null : MapToResponse(order);
+    }
+
     private static Dictionary<Guid, int> AggregateQuantities(
         IReadOnlyList<CreateOrderItemRequest> items)
     {
@@ -117,6 +130,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         new(
             order.Id,
             order.OrderNumber,
+            order.PublicId,
             order.OrderStatus,
             order.PaymentMethod,
             order.TotalPrice,

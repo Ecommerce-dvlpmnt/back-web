@@ -22,6 +22,17 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         return order is null ? NotFound() : Ok(order);
     }
 
+    [HttpGet("by-public-id/{publicId}")]
+    [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderResponse>> GetByPublicId(
+        string publicId,
+        CancellationToken cancellationToken)
+    {
+        var order = await orderService.GetByPublicIdAsync(publicId, cancellationToken);
+        return order is null ? NotFound() : Ok(order);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]

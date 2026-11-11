@@ -40,6 +40,7 @@ public sealed record CreateOrderItemRequest
 public sealed record OrderResponse(
     Guid Id,
     int OrderNumber,
+    string PublicId,
     OrderStatus OrderStatus,
     PaymentMethod PaymentMethod,
     decimal TotalPrice,

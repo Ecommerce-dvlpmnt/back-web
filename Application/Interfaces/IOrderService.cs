@@ -11,4 +11,8 @@ public interface IOrderService
     Task<OrderResponse?> GetByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default);
+
+    Task<OrderResponse?> GetByPublicIdAsync(
+        string publicId,
+        CancellationToken cancellationToken = default);
 }

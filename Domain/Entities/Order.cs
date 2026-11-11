@@ -7,6 +7,7 @@ public class Order : ITrackableEntity
 {
     public Guid Id { get; set; }
     public int OrderNumber { get; set; }
+    public string PublicId { get; set; } = null!;
     public string CustomerFirstName { get; set; } = null!;
     public string CustomerLastName { get; set; } = null!;
     public string CustomerPhone { get; set; } = null!;

@@ -24,11 +24,6 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresEnum<OrderStatus>("order_status");
-        modelBuilder.HasPostgresEnum<PaymentStatus>("payment_status");
-        modelBuilder.HasPostgresEnum<PaymentMethod>("payment_method");
-        modelBuilder.HasPostgresEnum<ShipmentStatus>("shipment_status");
-
         ConfigureSuppliers(modelBuilder);
         ConfigureCategories(modelBuilder);
         ConfigureProducts(modelBuilder);
@@ -258,6 +253,7 @@ public class AppDbContext : DbContext
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.OrderNumber).HasColumnName("OrderNumber").UseIdentityAlwaysColumn();
+        e.Property(x => x.PublicId).HasColumnName("PublicId").HasMaxLength(32).IsRequired();
         e.Property(x => x.CustomerFirstName).HasColumnName("CustomerFirstName").HasMaxLength(100).IsRequired();
         e.Property(x => x.CustomerLastName).HasColumnName("CustomerLastName").HasMaxLength(100).IsRequired();
         e.Property(x => x.CustomerPhone).HasColumnName("CustomerPhone").HasMaxLength(20).IsRequired();
@@ -281,6 +277,7 @@ public class AppDbContext : DbContext
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
 
+        e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("Orders_PublicId_key");
         e.HasIndex(x => x.OrderNumber).IsUnique().HasDatabaseName("Orders_OrderNumber_key");
         e.HasIndex(x => x.CustomerPhone).HasDatabaseName("IX_Orders_CustomerPhone");
         e.HasIndex(x => x.CreatedAt).HasDatabaseName("IX_Orders_CreatedAt").IsDescending();
