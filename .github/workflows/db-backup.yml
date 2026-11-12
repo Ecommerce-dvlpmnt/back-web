@@ -28,6 +28,7 @@ jobs:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
+          DB_URL="$(printf '%s' "$DB_URL" | tr -d '\r\n')"
           STAMP="$(date -u +%Y%m%d-%H%M%S)"
           FILE="db-backup-${STAMP}.sql.gz"
           echo "FILE=$FILE" >> "$GITHUB_ENV"
@@ -42,7 +43,7 @@ jobs:
           ls -lh "$FILE"
           test -s "$FILE"
           gunzip -t "$FILE"
-          gunzip -c "$FILE" | grep -q 'CREATE TABLE' \
+          gunzip -c "$FILE" | grep 'CREATE TABLE' > /dev/null \
             || { echo "::error::Dump does not contain CREATE TABLE"; exit 1; }
 
       - name: Upload artifact
