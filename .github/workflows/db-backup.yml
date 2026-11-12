@@ -47,6 +47,13 @@ jobs:
           gunzip -c "$FILE" | grep 'CREATE TABLE' > /dev/null \
             || { echo "::error::Dump does not contain CREATE TABLE"; exit 1; }
 
+      - name: Inspect dump for schema references
+        run: |
+          set -euo pipefail
+          echo "CREATE EXTENSION lines left: $(gunzip -c "$FILE" | grep -c 'CREATE EXTENSION' || true)"
+          echo "Lines mentioning extensions:"
+          gunzip -c "$FILE" | grep -n -i 'extensions' | head -n 20 || true
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,9 +93,12 @@ jobs:
           FILE="$(ls db-backup-*.sql.gz)"
           echo "Restoring $FILE"
           gunzip -t "$FILE"
+          docker run --rm --network host -e PGPASSWORD=restore postgres:17 \
+            psql -h 127.0.0.1 -p 5432 -U restore -d restore -v ON_ERROR_STOP=1 -q \
+            -c 'CREATE SCHEMA IF NOT EXISTS extensions'
           gunzip -c "$FILE" | docker run --rm -i --network host \
             -e PGPASSWORD=restore postgres:17 \
-            psql -h 127.0.0.1 -p 5432 -U restore -d restore -v ON_ERROR_STOP=1 -q
+            psql -h 127.0.0.1 -p 5432 -U restore -d restore -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -q
 
       - name: Sanity checks
         run: |
