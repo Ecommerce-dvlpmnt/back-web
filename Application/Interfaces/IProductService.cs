@@ -16,5 +16,7 @@ public interface IProductService
         bool isMainImage,
         CancellationToken cancellationToken);
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> UpdateStockAsync(Guid id, int stock, CancellationToken cancellationToken = default);
     Task<bool> ExistsBySkuOrSlugAsync(string sku, string slug, Guid? excludeId = null, CancellationToken cancellationToken = default);
 }

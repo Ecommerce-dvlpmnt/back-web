@@ -27,6 +27,64 @@ namespace EcommerceBackend.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "shipment_status", new[] { "Cancelled", "Confirmed", "Pending", "Problem", "Requested", "Shipped" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.AdSpend", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("Amount");
+
+                    b.Property<decimal>("AmountUsd")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("AmountUsd");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("Date");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 4)
+                        .HasColumnType("numeric(8,4)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("ExchangeRate");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("Note");
+
+                    b.Property<Guid?>("RecordedByAdminId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("RecordedByAdminId");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("Source");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedByAdminId");
+
+                    b.ToTable("AdSpends", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Admin", b =>
                 {
                     b.Property<Guid>("Id")
@@ -35,29 +93,78 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("Id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("Email");
+
+                    b.Property<decimal?>("FixedSharePercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("FixedSharePercent");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("Name");
 
+                    b.Property<string>("PartnerRole")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("PartnerRole");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("PasswordHash");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
-                        .HasDefaultValue("Manager")
+                        .HasDefaultValue("Admin")
                         .HasColumnName("Role");
 
                     b.Property<long?>("TelegramId")
                         .HasColumnType("bigint")
                         .HasColumnName("TelegramId");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("UpdatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("Username");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TelegramId")
                         .IsUnique()
                         .HasDatabaseName("Admins_TelegramId_key");
+
+                    b.HasIndex("Username")
+                        .IsUnique()
+                        .HasDatabaseName("Admins_Username_key");
 
                     b.ToTable("Admins", (string)null);
                 });
@@ -223,6 +330,11 @@ namespace EcommerceBackend.Migrations
                     b.Property<string>("CustomerComment")
                         .HasColumnType("text")
                         .HasColumnName("CustomerComment");
+
+                    b.Property<string>("CustomerEmail")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("CustomerEmail");
 
                     b.Property<string>("CustomerFirstName")
                         .IsRequired()
@@ -521,6 +633,59 @@ namespace EcommerceBackend.Migrations
                     b.ToTable("OrderStatusHistory", (string)null);
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerDeposit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("AdminId");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("Amount");
+
+                    b.Property<decimal>("AmountUsd")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("AmountUsd");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("Date");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 4)
+                        .HasColumnType("numeric(8,4)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("ExchangeRate");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("Note");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId")
+                        .HasDatabaseName("IX_PartnerDeposits_AdminId");
+
+                    b.ToTable("PartnerDeposits", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -771,6 +936,17 @@ namespace EcommerceBackend.Migrations
                     b.ToTable("Suppliers", (string)null);
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.AdSpend", b =>
+                {
+                    b.HasOne("EcommerceBackend.Domain.Entities.Admin", "RecordedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("RecordedByAdminId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("AdSpends_RecordedByAdminId_fkey");
+
+                    b.Navigation("RecordedByAdmin");
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.CampaignProduct", b =>
                 {
                     b.HasOne("EcommerceBackend.Domain.Entities.Campaign", "Campaign")
@@ -876,6 +1052,18 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerDeposit", b =>
+                {
+                    b.HasOne("EcommerceBackend.Domain.Entities.Admin", "Admin")
+                        .WithMany("Deposits")
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("PartnerDeposits_AdminId_fkey");
+
+                    b.Navigation("Admin");
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>
                 {
                     b.HasOne("EcommerceBackend.Domain.Entities.Category", "Category")
@@ -932,6 +1120,8 @@ namespace EcommerceBackend.Migrations
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Admin", b =>
                 {
+                    b.Navigation("Deposits");
+
                     b.Navigation("StatusChanges");
                 });
 

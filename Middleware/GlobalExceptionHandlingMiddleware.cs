@@ -65,6 +65,7 @@ public sealed class GlobalExceptionHandlingMiddleware(
         ArgumentException => (StatusCodes.Status400BadRequest, exception.Message),
         KeyNotFoundException => (StatusCodes.Status404NotFound, exception.Message),
         InvalidOperationException => (StatusCodes.Status409Conflict, exception.Message),
+        UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, exception.Message),
         DbUpdateException { InnerException: PostgresException postgres } => MapPostgres(postgres),
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
     };

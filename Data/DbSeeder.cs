@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Bogus;
+using EcommerceBackend.Application.Security;
 using EcommerceBackend.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,9 +10,57 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
+        await SeedAdminsAsync(context, cancellationToken);
         await SeedSuppliersAsync(context, cancellationToken);
         var categoryIds = await SeedCategoriesAsync(context, cancellationToken);
         await SeedProductsAsync(context, categoryIds, cancellationToken);
+    }
+
+    private static async Task SeedAdminsAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        var usernamesToSeed = new (string Username, string Name, string Role, string PartnerRole, decimal FixedSharePercent)[]
+        {
+            ("gryftd", "Даниил (gryftd)", "Admin", "Lead / Dev", 35.0m),
+            ("Nesh10n", "Саша (Nesh10n)", "Admin", "Dev / Backend", 35.0m),
+            ("var404", "Максим (var404)", "Admin", "Marketing", 20.0m),
+            ("gdm1234", "Партнер 4 (gdm1234)", "Admin", "Operations", 10.0m)
+        };
+
+        var hasher = new PasswordHasher();
+        var defaultPasswordHash = hasher.HashPassword("Admin12345!");
+        var now = DateTime.UtcNow;
+
+        foreach (var (username, name, role, partnerRole, fixedSharePercent) in usernamesToSeed)
+        {
+            var admin = await context.Admins.FirstOrDefaultAsync(a => a.Username.ToLower() == username.ToLower(), cancellationToken);
+            if (admin is null)
+            {
+                context.Admins.Add(new Admin
+                {
+                    Id = Guid.NewGuid(),
+                    Username = username,
+                    Name = name,
+                    Email = $"{username.ToLower()}@ecommerce.local",
+                    PasswordHash = defaultPasswordHash,
+                    Role = role,
+                    PartnerRole = partnerRole,
+                    FixedSharePercent = fixedSharePercent,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(admin.PartnerRole))
+                {
+                    admin.PartnerRole = partnerRole;
+                    admin.FixedSharePercent = fixedSharePercent;
+                }
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task SeedSuppliersAsync(AppDbContext context, CancellationToken cancellationToken)
