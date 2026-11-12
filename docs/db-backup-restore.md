@@ -9,6 +9,7 @@
 - Дамп: схема `public`, plain SQL, gzip, `--clean --if-exists --no-owner --no-privileges`.
 - Хранение: GitHub Actions artifacts, имя `db-backup`, файл `db-backup-YYYYMMDD-HHMMSS.sql.gz`, retention 90 дней.
 - Job `restore-test`: разворачивает свежий дамп в чистом `postgres:17` внутри CI и проверяет таблицы/миграции.
+- Из дампа исключаются `CREATE/COMMENT/ALTER EXTENSION`: в Supabase расширения стоят в схеме `extensions`, в чистом Postgres их нет. Индексы на `pg_trgm` используют `extensions.gin_trgm_ops`, поэтому перед restore создаются схема `extensions` и расширение `pg_trgm`.
 
 > Важно: cron-расписание GitHub включает только для workflow из default-ветки (`main`). До мержа в main запускай вручную из ветки `dev`.
 
@@ -32,10 +33,16 @@
 Локально (нужен `psql` 17 или Docker):
 
 ```bash
+docker run --rm --network host -e PGPASSWORD=<pass> postgres:17 \
+  psql -h 127.0.0.1 -U <user> -d <db> -v ON_ERROR_STOP=1 \
+  -c 'CREATE SCHEMA IF NOT EXISTS extensions' \
+  -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions'
 gunzip -c db-backup-YYYYMMDD-HHMMSS.sql.gz | docker run --rm -i --network host \
   -e PGPASSWORD=<pass> postgres:17 \
   psql -h 127.0.0.1 -U <user> -d <db> -v ON_ERROR_STOP=1
 ```
+
+Схема `extensions` + `pg_trgm` нужны потому, что в дампе нет `CREATE EXTENSION` (в Supabase расширения живут в схеме `extensions`), а trgm-индексы ссылаются на `extensions.gin_trgm_ops`.
 
 В Supabase — только при реальной аварии и после согласования с командой:
 
@@ -65,3 +72,4 @@ dotnet ef database update <ИмяПредыдущейМиграции>
 - Supabase free-план не делает автоматических бэкапов — этот workflow единственная копия.
 - Scheduled workflows отключаются после 60 дней без активности в репозитории; любой коммит/запуск возвращает расписание.
 - Artifacts старше 90 дней удаляются автоматически.
+- Репозиторий публичный, поэтому artifact с дампом может скачать любой. Шифрование дампа (например, `gpg` + секрет `BACKUP_PASSPHRASE`) пока не сделано — при требовании безопасности добавить.
