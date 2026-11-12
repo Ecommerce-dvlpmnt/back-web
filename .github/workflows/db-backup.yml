@@ -39,6 +39,7 @@ jobs:
               --no-privileges \
               --clean \
               --if-exists \
+            | grep -v -E '^(CREATE EXTENSION|COMMENT ON EXTENSION|ALTER EXTENSION)' \
             | gzip -9 > "$FILE"
           ls -lh "$FILE"
           test -s "$FILE"
