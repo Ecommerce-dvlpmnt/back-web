@@ -20,6 +20,10 @@ public interface IOrderService
         string publicId,
         CancellationToken cancellationToken = default);
 
+    Task<OrderResponse> CancelByPublicIdAsync(
+        string publicId,
+        CancellationToken cancellationToken = default);
+
     Task<PagedOrderListResponse> GetAllAsync(
         OrderListQuery query,
         CancellationToken cancellationToken = default);

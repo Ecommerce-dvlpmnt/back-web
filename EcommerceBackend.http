@@ -184,6 +184,14 @@ Content-Type: application/json
 GET {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}
 Accept: application/json
 
+### 17a. Отменить заказ гостем по publicId (только статус New и неоплаченный)
+POST {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}/cancel
+Accept: application/json
+
+### 17b. Повторная отмена — идемпотентно 200, сток повторно не возвращается
+POST {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}/cancel
+Accept: application/json
+
 ### 18. Получить заказ по ID
 GET {{baseUrl}}/api/orders/{{orderId}}
 Accept: application/json

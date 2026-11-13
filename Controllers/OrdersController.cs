@@ -50,6 +50,19 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         return order is null ? NotFound() : Ok(order);
     }
 
+    /// <summary>Скасувати гостьове замовлення за публічним кодом (лише статус New і не оплачене).</summary>
+    [HttpPost("by-public-id/{publicId}/cancel")]
+    [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OrderResponse>> CancelByPublicId(
+        string publicId,
+        CancellationToken cancellationToken)
+    {
+        var order = await orderService.CancelByPublicIdAsync(publicId, cancellationToken);
+        return Ok(order);
+    }
+
     /// <summary>Оформить заказ из корзины (публичный эндпоинт витрины).</summary>
     [HttpPost]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]

@@ -165,6 +165,68 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         return order is null ? null : MapToResponse(order);
     }
 
+    public async Task<OrderResponse> CancelByPublicIdAsync(
+        string publicId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var order = await dbContext.Orders
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Orders\" WHERE \"PublicId\" = {publicId} FOR UPDATE")
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (order is null)
+        {
+            throw new KeyNotFoundException(
+                $"Замовлення з публічним кодом '{publicId}' не знайдено.");
+        }
+
+        var decision = OrderCancellationPolicy.Check(order.OrderStatus, order.PaymentStatus);
+        if (decision == OrderCancellationDecision.AlreadyCancelled)
+        {
+            return MapToResponse(order);
+        }
+
+        if (decision == OrderCancellationDecision.NotNewStatus)
+        {
+            throw new InvalidOperationException(
+                "Скасувати можна лише нове замовлення, яке ще не підтверджено.");
+        }
+
+        if (decision == OrderCancellationDecision.Paid)
+        {
+            throw new InvalidOperationException(
+                "Оплачене замовлення не можна скасувати самостійно. Зверніться до підтримки.");
+        }
+
+        var oldStatus = order.OrderStatus;
+        var now = DateTime.UtcNow;
+
+        await ReturnStockAsync(order, now, cancellationToken);
+
+        order.OrderStatus = OrderStatus.Cancelled;
+        order.UpdatedAt = now;
+
+        dbContext.OrderStatusHistory.Add(new OrderStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            OldStatus = oldStatus,
+            NewStatus = OrderStatus.Cancelled,
+            ChangedByAdminId = null,
+            Comment = "Скасовано клієнтом",
+            CreatedAt = now
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return MapToResponse(order);
+    }
+
     public async Task<PagedOrderListResponse> GetAllAsync(
         OrderListQuery query,
         CancellationToken cancellationToken = default)
@@ -250,25 +312,12 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             return MapToResponse(order);
         }
 
-        // Return stock back if cancelled
         if (newStatus == OrderStatus.Cancelled
             && oldStatus != OrderStatus.Cancelled
             && oldStatus != OrderStatus.Refused
             && oldStatus != OrderStatus.Returned)
         {
-            var productIds = order.Items.Select(i => i.ProductId).ToArray();
-            var products = await dbContext.Products
-                .Where(p => productIds.Contains(p.Id))
-                .ToDictionaryAsync(p => p.Id, cancellationToken);
-
-            foreach (var item in order.Items)
-            {
-                if (products.TryGetValue(item.ProductId, out var product))
-                {
-                    product.Stock += item.Quantity;
-                    product.StockUpdatedAt = DateTime.UtcNow;
-                }
-            }
+            await ReturnStockAsync(order, DateTime.UtcNow, cancellationToken);
         }
 
         order.OrderStatus = newStatus;
@@ -307,6 +356,27 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return MapToAdminDetailResponse(order);
+    }
+
+    private async Task ReturnStockAsync(
+        Order order,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var productIds = order.Items.Select(i => i.ProductId).ToArray();
+        var products = await dbContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        foreach (var item in order.Items)
+        {
+            if (products.TryGetValue(item.ProductId, out var product))
+            {
+                product.Stock += item.Quantity;
+                product.StockUpdatedAt = now;
+            }
+        }
     }
 
     private static Dictionary<Guid, int> AggregateQuantities(
