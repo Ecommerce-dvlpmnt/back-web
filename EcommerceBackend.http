@@ -164,7 +164,8 @@ POST {{baseUrl}}/api/orders
 Content-Type: application/json
 
 {
-  "fullName": "Олена Коваль",
+  "customerFirstName": "Олена",
+  "customerLastName": "Коваль",
   "customerPhone": "+380991234567",
   "customerEmail": "olena@example.com",
   "customerComment": "Гостьове замовлення через витрину",

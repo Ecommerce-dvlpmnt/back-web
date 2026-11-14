@@ -35,41 +35,26 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             throw new InsufficientStockException(shortages);
         }
 
-        // Resolving names flexibly for storefronts
-        var rawName = (request.FullName ?? request.CustomerName ?? request.Name ?? "").Trim();
         var firstName = request.CustomerFirstName?.Trim() ?? "";
         var lastName = request.CustomerLastName?.Trim() ?? "";
 
-        if (string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(rawName))
-        {
-            var parts = rawName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            firstName = parts[0];
-            lastName = parts.Length > 1 ? parts[1] : parts[0];
-        }
-        else if (!string.IsNullOrWhiteSpace(firstName) && string.IsNullOrWhiteSpace(lastName))
+        if (string.IsNullOrWhiteSpace(lastName) && !string.IsNullOrWhiteSpace(firstName))
         {
             var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length > 1)
-            {
-                firstName = parts[0];
-                lastName = parts[1];
-            }
-            else
-            {
-                lastName = firstName;
-            }
+            firstName = parts[0];
+            lastName = parts.Length > 1 ? parts[1] : parts[0];
         }
 
         if (string.IsNullOrWhiteSpace(firstName)) firstName = "Покупець";
         if (string.IsNullOrWhiteSpace(lastName)) lastName = firstName;
 
-        var phone = (request.CustomerPhone ?? request.Phone ?? "").Trim();
+        var phone = request.CustomerPhone?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(phone))
             throw new ArgumentException("Номер телефону є обов'язковим для оформлення замовлення.", nameof(request));
 
-        var email = (request.CustomerEmail ?? request.Email)?.Trim();
-        var cityName = (request.DeliveryCityName ?? request.City)?.Trim();
-        var warehouseName = (request.DeliveryWarehouseName ?? request.Warehouse ?? request.Address)?.Trim();
+        var email = request.CustomerEmail?.Trim();
+        var cityName = request.DeliveryCityName?.Trim();
+        var warehouseName = request.DeliveryWarehouseName?.Trim();
 
         if (!string.IsNullOrWhiteSpace(request.DeliveryType) && !string.IsNullOrWhiteSpace(warehouseName)
             && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
@@ -77,7 +62,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             warehouseName = $"{request.DeliveryType}: {warehouseName}";
         }
 
-        var comment = (request.CustomerComment ?? request.Comment)?.Trim();
+        var comment = request.CustomerComment?.Trim();
         var now = DateTime.UtcNow;
 
         var order = new Order
