@@ -35,41 +35,26 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             throw new InsufficientStockException(shortages);
         }
 
-        // Resolving names flexibly for storefronts
-        var rawName = (request.FullName ?? request.CustomerName ?? request.Name ?? "").Trim();
         var firstName = request.CustomerFirstName?.Trim() ?? "";
         var lastName = request.CustomerLastName?.Trim() ?? "";
 
-        if (string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(rawName))
-        {
-            var parts = rawName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            firstName = parts[0];
-            lastName = parts.Length > 1 ? parts[1] : parts[0];
-        }
-        else if (!string.IsNullOrWhiteSpace(firstName) && string.IsNullOrWhiteSpace(lastName))
+        if (string.IsNullOrWhiteSpace(lastName) && !string.IsNullOrWhiteSpace(firstName))
         {
             var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length > 1)
-            {
-                firstName = parts[0];
-                lastName = parts[1];
-            }
-            else
-            {
-                lastName = firstName;
-            }
+            firstName = parts[0];
+            lastName = parts.Length > 1 ? parts[1] : parts[0];
         }
 
         if (string.IsNullOrWhiteSpace(firstName)) firstName = "Покупець";
         if (string.IsNullOrWhiteSpace(lastName)) lastName = firstName;
 
-        var phone = (request.CustomerPhone ?? request.Phone ?? "").Trim();
+        var phone = request.CustomerPhone?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(phone))
             throw new ArgumentException("Номер телефону є обов'язковим для оформлення замовлення.", nameof(request));
 
-        var email = (request.CustomerEmail ?? request.Email)?.Trim();
-        var cityName = (request.DeliveryCityName ?? request.City)?.Trim();
-        var warehouseName = (request.DeliveryWarehouseName ?? request.Warehouse ?? request.Address)?.Trim();
+        var email = request.CustomerEmail?.Trim();
+        var cityName = request.DeliveryCityName?.Trim();
+        var warehouseName = request.DeliveryWarehouseName?.Trim();
 
         if (!string.IsNullOrWhiteSpace(request.DeliveryType) && !string.IsNullOrWhiteSpace(warehouseName)
             && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
@@ -77,7 +62,7 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             warehouseName = $"{request.DeliveryType}: {warehouseName}";
         }
 
-        var comment = (request.CustomerComment ?? request.Comment)?.Trim();
+        var comment = request.CustomerComment?.Trim();
         var now = DateTime.UtcNow;
 
         var order = new Order
@@ -165,6 +150,68 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         return order is null ? null : MapToResponse(order);
     }
 
+    public async Task<OrderResponse> CancelByPublicIdAsync(
+        string publicId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var order = await dbContext.Orders
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Orders\" WHERE \"PublicId\" = {publicId} FOR UPDATE")
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (order is null)
+        {
+            throw new KeyNotFoundException(
+                $"Замовлення з публічним кодом '{publicId}' не знайдено.");
+        }
+
+        var decision = OrderCancellationPolicy.Check(order.OrderStatus, order.PaymentStatus);
+        if (decision == OrderCancellationDecision.AlreadyCancelled)
+        {
+            return MapToResponse(order);
+        }
+
+        if (decision == OrderCancellationDecision.NotNewStatus)
+        {
+            throw new InvalidOperationException(
+                "Скасувати можна лише нове замовлення, яке ще не підтверджено.");
+        }
+
+        if (decision == OrderCancellationDecision.Paid)
+        {
+            throw new InvalidOperationException(
+                "Оплачене замовлення не можна скасувати самостійно. Зверніться до підтримки.");
+        }
+
+        var oldStatus = order.OrderStatus;
+        var now = DateTime.UtcNow;
+
+        await ReturnStockAsync(order, now, cancellationToken);
+
+        order.OrderStatus = OrderStatus.Cancelled;
+        order.UpdatedAt = now;
+
+        dbContext.OrderStatusHistory.Add(new OrderStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            OldStatus = oldStatus,
+            NewStatus = OrderStatus.Cancelled,
+            ChangedByAdminId = null,
+            Comment = "Скасовано клієнтом",
+            CreatedAt = now
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return MapToResponse(order);
+    }
+
     public async Task<PagedOrderListResponse> GetAllAsync(
         OrderListQuery query,
         CancellationToken cancellationToken = default)
@@ -250,25 +297,12 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
             return MapToResponse(order);
         }
 
-        // Return stock back if cancelled
         if (newStatus == OrderStatus.Cancelled
             && oldStatus != OrderStatus.Cancelled
             && oldStatus != OrderStatus.Refused
             && oldStatus != OrderStatus.Returned)
         {
-            var productIds = order.Items.Select(i => i.ProductId).ToArray();
-            var products = await dbContext.Products
-                .Where(p => productIds.Contains(p.Id))
-                .ToDictionaryAsync(p => p.Id, cancellationToken);
-
-            foreach (var item in order.Items)
-            {
-                if (products.TryGetValue(item.ProductId, out var product))
-                {
-                    product.Stock += item.Quantity;
-                    product.StockUpdatedAt = DateTime.UtcNow;
-                }
-            }
+            await ReturnStockAsync(order, DateTime.UtcNow, cancellationToken);
         }
 
         order.OrderStatus = newStatus;
@@ -307,6 +341,27 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return MapToAdminDetailResponse(order);
+    }
+
+    private async Task ReturnStockAsync(
+        Order order,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var productIds = order.Items.Select(i => i.ProductId).ToArray();
+        var products = await dbContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        foreach (var item in order.Items)
+        {
+            if (products.TryGetValue(item.ProductId, out var product))
+            {
+                product.Stock += item.Quantity;
+                product.StockUpdatedAt = now;
+            }
+        }
     }
 
     private static Dictionary<Guid, int> AggregateQuantities(

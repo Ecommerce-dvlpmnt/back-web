@@ -124,7 +124,12 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
         }));
 
 // Repositories & Domain Services
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<ICurrencyRateService, NbuCurrencyRateService>();
+builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();

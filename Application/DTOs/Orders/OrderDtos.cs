@@ -6,33 +6,24 @@ namespace EcommerceBackend.Application.DTOs.Orders;
 /// <summary>Payload for creating an order and reserving its items from stock.</summary>
 public sealed record CreateOrderRequest
 {
-    // First/Last name or single full name / customer name
+    // First and last name
     public string? CustomerFirstName { get; init; }
     public string? CustomerLastName { get; init; }
-    public string? CustomerName { get; init; }
-    public string? FullName { get; init; }
-    public string? Name { get; init; }
 
     [Required, StringLength(30)]
     public required string CustomerPhone { get; init; }
-    public string? Phone { get; init; }
 
     [EmailAddress, StringLength(150)]
     public string? CustomerEmail { get; init; }
-    public string? Email { get; init; }
 
     public string? CustomerComment { get; init; }
-    public string? Comment { get; init; }
 
     // Delivery fields (Nova Poshta branch / postomat / address)
     public string? DeliveryType { get; init; } // "Warehouse", "Postomat", "Branch", "Поштомат", "Відділення"
     public string? DeliveryCityRef { get; init; }
     public string? DeliveryCityName { get; init; }
-    public string? City { get; init; }
     public string? DeliveryWarehouseRef { get; init; }
     public string? DeliveryWarehouseName { get; init; }
-    public string? Warehouse { get; init; }
-    public string? Address { get; init; }
 
     public PaymentMethod PaymentMethod { get; init; } = PaymentMethod.CashOnDelivery;
 

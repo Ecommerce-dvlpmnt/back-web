@@ -164,7 +164,8 @@ POST {{baseUrl}}/api/orders
 Content-Type: application/json
 
 {
-  "fullName": "Олена Коваль",
+  "customerFirstName": "Олена",
+  "customerLastName": "Коваль",
   "customerPhone": "+380991234567",
   "customerEmail": "olena@example.com",
   "customerComment": "Гостьове замовлення через витрину",
@@ -182,6 +183,14 @@ Content-Type: application/json
 
 ### 17. Просмотр заказа клиентом по publicId (страница «Спасибо за заказ»)
 GET {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}
+Accept: application/json
+
+### 17a. Отменить заказ гостем по publicId (только статус New и неоплаченный)
+POST {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}/cancel
+Accept: application/json
+
+### 17b. Повторная отмена — идемпотентно 200, сток повторно не возвращается
+POST {{baseUrl}}/api/orders/by-public-id/{{orderPublicId}}/cancel
 Accept: application/json
 
 ### 18. Получить заказ по ID
