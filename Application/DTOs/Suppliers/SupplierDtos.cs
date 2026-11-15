@@ -28,3 +28,12 @@ public class CreateSupplierDto
 
     public bool IsActive { get; set; } = true;
 }
+
+public sealed class UpdateSupplierDto : CreateSupplierDto
+{
+}
+
+public sealed class UpdateSupplierStatusDto
+{
+    public bool IsActive { get; init; }
+}

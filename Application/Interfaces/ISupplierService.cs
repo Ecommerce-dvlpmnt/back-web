@@ -7,5 +7,8 @@ public interface ISupplierService
     Task<IReadOnlyList<SupplierDto>> GetAllAsync(bool onlyActive, CancellationToken cancellationToken = default);
     Task<SupplierDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<SupplierDto> CreateAsync(CreateSupplierDto request, CancellationToken cancellationToken = default);
+    Task<SupplierDto?> UpdateAsync(Guid id, UpdateSupplierDto request, CancellationToken cancellationToken = default);
+    Task<SupplierDto?> UpdateStatusAsync(Guid id, bool isActive, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> ExistsByNameAsync(string name, Guid? excludeId = null, CancellationToken cancellationToken = default);
 }

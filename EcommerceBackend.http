@@ -15,14 +15,10 @@
 
 
 ### =========================================================================
-### Категории и поставщики
+### Категории (Публичные витринные эндпоинты)
 ### =========================================================================
 
-### 1. Справочник поставщиков
-GET {{baseUrl}}/api/suppliers
-Accept: application/json
-
-### 2. Получить все активные категории
+### 1. Получить все активные категории для витрины
 GET {{baseUrl}}/api/categories?onlyActive=true
 Accept: application/json
 
@@ -398,3 +394,62 @@ Content-Type: application/json
 GET {{baseUrl}}/api/admin/finance/ad-spend
 Authorization: Bearer {{adminToken}}
 Accept: application/json
+
+### =========================================================================
+### Поставщики (Админка - закрытый контур /api/admin/suppliers)
+### =========================================================================
+
+### 45. Список всех поставщиков для администратора
+GET {{baseUrl}}/api/admin/suppliers
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 46. Список только активных поставщиков
+GET {{baseUrl}}/api/admin/suppliers?onlyActive=true
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 47. Получить поставщика по ID
+GET {{baseUrl}}/api/admin/suppliers/{{supplierId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 48. Создать нового поставщика
+# @name createSupplier
+POST {{baseUrl}}/api/admin/suppliers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Новый Одесский Поставщик 7км",
+  "contact": "+380501112233, менеджер Олег",
+  "city": "Одеса",
+  "notes": "Прямой дропшиппинг гирлянд и декора со склада",
+  "isActive": true
+}
+
+### 49. Обновить данные поставщика
+PUT {{baseUrl}}/api/admin/suppliers/{{supplierId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Глобал Постач Оновлений",
+  "contact": "+380679998877",
+  "city": "Київ",
+  "notes": "Оновлені умови роботи: відправка день у день",
+  "isActive": true
+}
+
+### 50. Быстро изменить статус активности поставщика (деактивация / активация)
+PATCH {{baseUrl}}/api/admin/suppliers/{{supplierId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "isActive": false
+}
+
+### 51. Удалить поставщика (запрещено при наличии привязанных товаров или отправок)
+DELETE {{baseUrl}}/api/admin/suppliers/{{supplierId}}
+Authorization: Bearer {{adminToken}}

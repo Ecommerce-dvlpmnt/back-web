@@ -28,14 +28,62 @@ public sealed class SupplierService(ISupplierRepository supplierRepository) : IS
         var supplier = new Supplier
         {
             Id = Guid.NewGuid(),
-            Name = request.Name,
-            Contact = request.Contact,
-            City = request.City,
-            Notes = request.Notes,
+            Name = request.Name.Trim(),
+            Contact = request.Contact?.Trim(),
+            City = request.City?.Trim(),
+            Notes = request.Notes?.Trim(),
             IsActive = request.IsActive
         };
 
         return MapToDto(await supplierRepository.CreateAsync(supplier, cancellationToken));
+    }
+
+    public async Task<SupplierDto?> UpdateAsync(
+        Guid id,
+        UpdateSupplierDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var supplier = await supplierRepository.GetByIdAsync(id, cancellationToken);
+        if (supplier is null)
+            return null;
+
+        if (await ExistsByNameAsync(request.Name, id, cancellationToken))
+            throw new InvalidOperationException("A supplier with this name already exists.");
+
+        supplier.Name = request.Name.Trim();
+        supplier.Contact = request.Contact?.Trim();
+        supplier.City = request.City?.Trim();
+        supplier.Notes = request.Notes?.Trim();
+        supplier.IsActive = request.IsActive;
+
+        var updated = await supplierRepository.UpdateAsync(supplier, cancellationToken);
+        return updated is null ? null : MapToDto(updated);
+    }
+
+    public async Task<SupplierDto?> UpdateStatusAsync(
+        Guid id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        var supplier = await supplierRepository.GetByIdAsync(id, cancellationToken);
+        if (supplier is null)
+            return null;
+
+        supplier.IsActive = isActive;
+        var updated = await supplierRepository.UpdateAsync(supplier, cancellationToken);
+        return updated is null ? null : MapToDto(updated);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var supplier = await supplierRepository.GetByIdAsync(id, cancellationToken);
+        if (supplier is null)
+            return false;
+
+        if (await supplierRepository.HasProductsOrShipmentsAsync(id, cancellationToken))
+            throw new InvalidOperationException("Supplier has associated products or shipments and cannot be deleted. Deactivate it instead.");
+
+        return await supplierRepository.DeleteAsync(id, cancellationToken);
     }
 
     public Task<bool> ExistsByNameAsync(

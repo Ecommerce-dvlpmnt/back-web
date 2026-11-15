@@ -48,6 +48,19 @@ public class SwaggerFilterTests
     }
 
     [Fact]
+    public void Admin_Suppliers_Endpoint_Should_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(AdminSuppliersController).GetMethod(nameof(AdminSuppliersController.GetAll))!;
+        var context = CreateContext(typeof(AdminSuppliersController), method, "api/admin/suppliers");
+
+        _filter.Apply(operation, context);
+
+        Assert.NotNull(operation.Security);
+        Assert.Single(operation.Security);
+    }
+
+    [Fact]
     public void Public_Client_Endpoint_Should_NOT_Have_Lock()
     {
         var operation = new OpenApiOperation();

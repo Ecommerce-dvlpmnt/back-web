@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Suppliers;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +12,7 @@ namespace EcommerceBackend.Controllers.Admin;
 [Produces("application/json")]
 public sealed class AdminSuppliersController(ISupplierService supplierService) : ControllerBase
 {
-    /// <summary>Список всех поставщиков для администратора.</summary>
+    /// <summary>Список всех поставщиков для администратора с фильтрацией по статусу активности.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<SupplierDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -40,15 +41,63 @@ public sealed class AdminSuppliersController(ISupplierService supplierService) :
     /// <summary>Создание нового поставщика товаров.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(SupplierDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<SupplierDto>> Create(
         [FromBody] CreateSupplierDto request,
         CancellationToken cancellationToken)
     {
         var supplier = await supplierService.CreateAsync(request, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
+    }
+
+    /// <summary>Обновление данных поставщика.</summary>
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(SupplierDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SupplierDto>> Update(
+        Guid id,
+        [FromBody] UpdateSupplierDto request,
+        CancellationToken cancellationToken)
+    {
+        var supplier = await supplierService.UpdateAsync(id, request, cancellationToken);
+        return supplier is null ? NotFound() : Ok(supplier);
+    }
+
+    /// <summary>Быстрое переключение статуса активности поставщика (активен / неактивен).</summary>
+    [HttpPatch("{id:guid}/status")]
+    [ProducesResponseType(typeof(SupplierDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SupplierDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateSupplierStatusDto request,
+        CancellationToken cancellationToken)
+    {
+        var supplier = await supplierService.UpdateStatusAsync(id, request.IsActive, cancellationToken);
+        return supplier is null ? NotFound() : Ok(supplier);
+    }
+
+    /// <summary>Удаление поставщика (если к нему не привязаны товары или отправки).</summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var deleted = await supplierService.DeleteAsync(id, cancellationToken);
+        return deleted ? NoContent() : NotFound();
     }
 }
