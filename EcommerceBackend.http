@@ -26,9 +26,10 @@ Accept: application/json
 GET {{baseUrl}}/api/categories?onlyActive=true
 Accept: application/json
 
-### 3. Создать новую категорию
+### 3. Создать новую категорию (Админка)
 # @name createCategory
-POST {{baseUrl}}/api/categories
+POST {{baseUrl}}/api/admin/categories
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
@@ -50,7 +51,8 @@ GET {{baseUrl}}/api/categories/by-slug/garlands
 Accept: application/json
 
 ### 6. ОШИБКА: создать категорию с уже занятым slug (ожидается 409 Conflict)
-POST {{baseUrl}}/api/categories
+POST {{baseUrl}}/api/admin/categories
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
@@ -61,8 +63,9 @@ Content-Type: application/json
   "isActive": true
 }
 
-### 7. Обновить категорию по ID
-PUT {{baseUrl}}/api/categories/{{categoryId}}
+### 7. Обновить категорию по ID (Админка)
+PUT {{baseUrl}}/api/admin/categories/{{categoryId}}
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
@@ -96,8 +99,9 @@ Accept: application/json
 GET {{baseUrl}}/api/products?PageNumber=1&PageSize=5
 Accept: application/json
 
-### 12. Создать новый товар (Ёлка)
-POST {{baseUrl}}/api/products
+### 12. Создать новый товар (Админка)
+POST {{baseUrl}}/api/admin/products
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
@@ -115,8 +119,9 @@ Content-Type: application/json
   "isActive": true
 }
 
-### 13. Создать светодиодную гирлянду
-POST {{baseUrl}}/api/products
+### 13. Создать светодиодную гирлянду (Админка)
+POST {{baseUrl}}/api/admin/products
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
@@ -136,8 +141,9 @@ Content-Type: application/json
 GET {{baseUrl}}/api/products/{{productId}}
 Accept: application/json
 
-### 15. Обновить товар
-PUT {{baseUrl}}/api/products/{{productId}}
+### 15. Обновить товар (Админка)
+PUT {{baseUrl}}/api/admin/products/{{productId}}
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {
