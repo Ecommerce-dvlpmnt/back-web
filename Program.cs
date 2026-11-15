@@ -266,11 +266,13 @@ public sealed class AuthorizeCheckOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
-        var hasAuthorize = context.MethodInfo.DeclaringType?.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any() == true
-            || context.MethodInfo.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any();
+        var declaringType = context.MethodInfo.DeclaringType;
+        var hasAuthorize = (declaringType != null && declaringType.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any())
+            || context.MethodInfo.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any()
+            || context.ApiDescription.RelativePath?.StartsWith("api/admin", StringComparison.OrdinalIgnoreCase) == true;
 
         var hasAllowAnonymous = context.MethodInfo.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any()
-            || context.MethodInfo.DeclaringType?.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any() == true;
+            || (declaringType != null && declaringType.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any());
 
         if (hasAuthorize && !hasAllowAnonymous)
         {
@@ -282,7 +284,7 @@ public sealed class AuthorizeCheckOperationFilter : IOperationFilter
             [
                 new OpenApiSecurityRequirement
                 {
-                    [new OpenApiSecuritySchemeReference("Bearer")] = []
+                    [new OpenApiSecuritySchemeReference("Bearer", context.Document)] = []
                 }
             ];
         }
