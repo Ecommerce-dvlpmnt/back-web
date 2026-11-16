@@ -34,6 +34,39 @@ public sealed class SupplierRepository(AppDbContext dbContext) : ISupplierReposi
         return supplier;
     }
 
+    public async Task<Supplier?> UpdateAsync(Supplier supplier, CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.Suppliers.FindAsync([supplier.Id], cancellationToken);
+        if (existing is null)
+            return null;
+
+        dbContext.Entry(existing).CurrentValues.SetValues(supplier);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return existing;
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var supplier = await dbContext.Suppliers.FindAsync([id], cancellationToken);
+        if (supplier is null)
+            return false;
+
+        dbContext.Suppliers.Remove(supplier);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> HasProductsOrShipmentsAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var hasProducts = await dbContext.Products
+            .AnyAsync(product => product.SupplierId == id, cancellationToken);
+        var hasShipments = await dbContext.OrderShipments
+            .AnyAsync(shipment => shipment.SupplierId == id, cancellationToken);
+
+        return hasProducts || hasShipments;
+    }
+
     public Task<bool> ExistsByNameAsync(
         string name,
         Guid? excludeId = null,

@@ -10,6 +10,7 @@ using EcommerceBackend.Domain.Enums;
 using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -17,6 +18,7 @@ using Microsoft.OpenApi;
 using Npgsql;
 using Serilog;
 using Serilog.Events;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -165,13 +167,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Введите JWT токен (без слова Bearer, Swagger добавит его сам):"
     });
 
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecuritySchemeReference("Bearer", doc),
-            new List<string>()
-        }
-    });
+    options.OperationFilter<AuthorizeCheckOperationFilter>();
 });
 
 // Validation error formatting
@@ -260,4 +256,37 @@ public sealed class ExactMatchNameTranslator : INpgsqlNameTranslator
 {
     public string TranslateTypeName(string clrName) => clrName;
     public string TranslateMemberName(string clrName) => clrName;
+}
+
+/// <summary>
+/// Отображает требование авторизации (замочек в Swagger) только для методов и контроллеров с атрибутом [Authorize].
+/// Открытые методы витрины и методы с [AllowAnonymous] отображаются без замка.
+/// </summary>
+public sealed class AuthorizeCheckOperationFilter : IOperationFilter
+{
+    public void Apply(OpenApiOperation operation, OperationFilterContext context)
+    {
+        var declaringType = context.MethodInfo.DeclaringType;
+        var hasAuthorize = (declaringType != null && declaringType.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any())
+            || context.MethodInfo.GetCustomAttributes(true).OfType<AuthorizeAttribute>().Any()
+            || context.ApiDescription.RelativePath?.StartsWith("api/admin", StringComparison.OrdinalIgnoreCase) == true;
+
+        var hasAllowAnonymous = context.MethodInfo.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any()
+            || (declaringType != null && declaringType.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any());
+
+        if (hasAuthorize && !hasAllowAnonymous)
+        {
+            operation.Responses ??= new OpenApiResponses();
+            operation.Responses.TryAdd(StatusCodes.Status401Unauthorized.ToString(), new OpenApiResponse { Description = "Unauthorized" });
+            operation.Responses.TryAdd(StatusCodes.Status403Forbidden.ToString(), new OpenApiResponse { Description = "Forbidden" });
+
+            operation.Security =
+            [
+                new OpenApiSecurityRequirement
+                {
+                    [new OpenApiSecuritySchemeReference("Bearer", context.Document)] = []
+                }
+            ];
+        }
+    }
 }

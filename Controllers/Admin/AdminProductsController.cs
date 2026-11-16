@@ -70,6 +70,28 @@ public sealed class AdminProductsController(IProductService productService) : Co
         return product is null ? NotFound() : Ok(product);
     }
 
+    /// <summary>Загрузка изображения для товара (главное фото или фото в галерею).</summary>
+    [HttpPost("{productId:guid}/images")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> UploadImage(
+        Guid productId,
+        [FromForm] UploadProductImageDto request,
+        CancellationToken cancellationToken)
+    {
+        var product = await productService.UploadImageToProductAsync(
+            productId,
+            request.File,
+            request.IsMainImage,
+            cancellationToken);
+
+        return Ok(product);
+    }
+
     /// <summary>Быстрое обновление остатка товара на складе.</summary>
     [HttpPatch("{id:guid}/stock")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
