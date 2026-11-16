@@ -31,4 +31,5 @@ public class Product : ITrackableEntity
     public ICollection<ProductRelated> RelatedLinks { get; set; } = new List<ProductRelated>();
     public ICollection<CampaignProduct> CampaignLinks { get; set; } = new List<CampaignProduct>();
     public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+    public ICollection<Review> Reviews { get; set; } = new List<Review>();
 }

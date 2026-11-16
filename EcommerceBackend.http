@@ -11,6 +11,7 @@
 @orderId = c2461c5f-500d-4962-b62e-8e125e02eeb3
 @orderPublicId = 686c90ce12bf427abce30ed034f919ba
 @adminDaniilId = b8fb4440-3f56-4164-852d-f0e209b32d0a
+@reviewId = 00000000-0000-0000-0000-000000000000
 @adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1laWQiOiJiOGZiNDQ0MC0zZjU2LTQxNjQtODUyZC1mMGUyMDliMzJkMGEiLCJ1bmlxdWVfbmFtZSI6ImdyeWZ0ZCIsIm5pY2tuYW1lIjoiZ3J5ZnRkIiwicm9sZSI6IkFkbWluIiwianRpIjoiZGU0MWQ4MTQtM2U5ZC00OWM4LTgxMTctNTEwZmZiODdiNzE5IiwiZW1haWwiOiJncnlmdGRAZWNvbW1lcmNlLmxvY2FsIiwibmJmIjoxNzk0NDE4ODY4LCJleHAiOjE3OTQ1MDUyNjgsImlhdCI6MTc5NDQxODg2OCwiaXNzIjoiRWNvbW1lcmNlQmFja2VuZCIsImF1ZCI6IkVjb21tZXJjZUFkbWluIn0.60VGkNN0Cbw0coHBhHPmvLEKPWJfku4TWGSVVL0ppzE
 
 
@@ -452,4 +453,79 @@ Content-Type: application/json
 
 ### 51. Удалить поставщика (запрещено при наличии привязанных товаров или отправок)
 DELETE {{baseUrl}}/api/admin/suppliers/{{supplierId}}
+Authorization: Bearer {{adminToken}}
+
+
+### =========================================================================
+### Модуль отзывов (Публичные эндпоинты /api/reviews)
+### =========================================================================
+
+### 52. Оставить отзыв о товаре (публично, без регистрации, попадает на модерацию в Pending)
+# @name submitReview
+POST {{baseUrl}}/api/reviews
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "authorName": "Даниил Шевченко",
+  "rating": 5,
+  "comment": "Отличная гирлянда! Провод плотный, светит тёплым уютным светом, доставили за 1 день.",
+  "pros": "Качественная изоляция, яркие диоды, быстрая доставка",
+  "cons": "Коробка слегка помялась при перевозке",
+  "honeypot": null
+}
+
+### 53. Тест защиты от спам-ботов (Honeypot заполнен ботом -> ожидает 400 Bad Request)
+POST {{baseUrl}}/api/reviews
+Content-Type: application/json
+
+{
+  "productId": "{{productId}}",
+  "authorName": "Spam Bot 3000",
+  "rating": 5,
+  "comment": "Check out our cheap watches at http://spam.example",
+  "honeypot": "http://spam.example"
+}
+
+### 54. Получить все одобренные (Approved) отзывы и сводку рейтинга по товару
+GET {{baseUrl}}/api/reviews/product/{{productId}}
+Accept: application/json
+
+
+### =========================================================================
+### Модуль отзывов (Админка - модерация /api/admin/reviews)
+### =========================================================================
+
+### 55. Список всех отзывов на модерации (со статусом Pending)
+GET {{baseUrl}}/api/admin/reviews?status=Pending
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 56. Список всех отзывов (любые статусы, пагинация)
+GET {{baseUrl}}/api/admin/reviews?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 57. Одобрить отзыв (перевести в статус Approved для публикации на сайте)
+PATCH {{baseUrl}}/api/admin/reviews/{{reviewId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Approved",
+  "adminComment": "Проверено: реальный заказ клиента, отзыв конструктивный"
+}
+
+### 58. Отклонить отзыв (перевести в статус Rejected)
+PATCH {{baseUrl}}/api/admin/reviews/{{reviewId}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "Rejected",
+  "adminComment": "Нецензурная лексика или спам"
+}
+
+### 59. Удалить отзыв безвозвратно
+DELETE {{baseUrl}}/api/admin/reviews/{{reviewId}}
 Authorization: Bearer {{adminToken}}

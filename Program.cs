@@ -60,6 +60,7 @@ dataSourceBuilder.MapEnum<PaymentMethod>("payment_method", nameTranslator);
 dataSourceBuilder.MapEnum<OrderStatus>("order_status", nameTranslator);
 dataSourceBuilder.MapEnum<PaymentStatus>("payment_status", nameTranslator);
 dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status", nameTranslator);
+dataSourceBuilder.MapEnum<ReviewStatus>("review_status", nameTranslator);
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddSingleton<NpgsqlDataSource>(_ => dataSource);
@@ -123,6 +124,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
             o.MapEnum<OrderStatus>("order_status", nameTranslator: nameTranslator);
             o.MapEnum<PaymentStatus>("payment_status", nameTranslator: nameTranslator);
             o.MapEnum<ShipmentStatus>("shipment_status", nameTranslator: nameTranslator);
+            o.MapEnum<ReviewStatus>("review_status", nameTranslator: nameTranslator);
         }));
 
 // Repositories & Domain Services
@@ -138,6 +140,8 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();

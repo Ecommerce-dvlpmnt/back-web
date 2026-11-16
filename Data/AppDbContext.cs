@@ -23,9 +23,11 @@ public class AppDbContext : DbContext
     public DbSet<OrderStatusHistory> OrderStatusHistory => Set<OrderStatusHistory>();
     public DbSet<PartnerDeposit> PartnerDeposits => Set<PartnerDeposit>();
     public DbSet<AdSpend> AdSpends => Set<AdSpend>();
+    public DbSet<Review> Reviews => Set<Review>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasPostgresEnum<ReviewStatus>("review_status");
         ConfigureSuppliers(modelBuilder);
         ConfigureCategories(modelBuilder);
         ConfigureProducts(modelBuilder);
@@ -40,6 +42,7 @@ public class AppDbContext : DbContext
         ConfigureOrderStatusHistory(modelBuilder);
         ConfigurePartnerDeposits(modelBuilder);
         ConfigureAdSpends(modelBuilder);
+        ConfigureReviews(modelBuilder);
     }
 
     private static void ConfigureSuppliers(ModelBuilder b)
@@ -463,6 +466,56 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.RecordedByAdminId)
             .HasConstraintName("AdSpends_RecordedByAdminId_fkey")
             .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    private static void ConfigureReviews(ModelBuilder b)
+    {
+        var e = b.Entity<Review>();
+        e.ToTable("Reviews");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.ProductId).HasColumnName("ProductId").IsRequired();
+        e.Property(x => x.CategoryId).HasColumnName("CategoryId");
+        e.Property(x => x.AuthorName).HasColumnName("AuthorName").HasMaxLength(100).IsRequired();
+        e.Property(x => x.Rating).HasColumnName("Rating").IsRequired();
+        e.Property(x => x.Comment).HasColumnName("Comment").IsRequired();
+        e.Property(x => x.Pros).HasColumnName("Pros").HasMaxLength(500);
+        e.Property(x => x.Cons).HasColumnName("Cons").HasMaxLength(500);
+        e.Property(x => x.Status).HasColumnName("Status").HasColumnType("review_status").HasDefaultValueSql("'Pending'");
+        e.Property(x => x.AdminComment).HasColumnName("AdminComment").HasMaxLength(1000);
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+        e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasOne(x => x.Product)
+            .WithMany(x => x.Reviews)
+            .HasForeignKey(x => x.ProductId)
+            .HasConstraintName("Reviews_ProductId_fkey")
+            .OnDelete(DeleteBehavior.Cascade);
+
+        e.HasOne(x => x.Category)
+            .WithMany(x => x.Reviews)
+            .HasForeignKey(x => x.CategoryId)
+            .HasConstraintName("Reviews_CategoryId_fkey")
+            .OnDelete(DeleteBehavior.SetNull);
+
+        e.ToTable(t => t.HasCheckConstraint("Reviews_Rating_check", "\"Rating\" >= 1 AND \"Rating\" <= 5"));
+
+        // Partial index for public product reviews (only approved, sorted newest first)
+        e.HasIndex(x => new { x.ProductId, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Reviews_ProductId_Approved")
+            .HasFilter("\"Status\" = 'Approved'");
+
+        // Partial index for public category reviews (only approved)
+        e.HasIndex(x => new { x.CategoryId, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Reviews_CategoryId_Approved")
+            .HasFilter("\"Status\" = 'Approved' AND \"CategoryId\" IS NOT NULL");
+
+        // Index for admin moderation queue (by Status and CreatedAt)
+        e.HasIndex(x => new { x.Status, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_Reviews_Status_CreatedAt");
     }
 
     public override int SaveChanges()

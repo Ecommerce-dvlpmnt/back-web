@@ -35,3 +35,10 @@ public enum ShipmentStatus
     Problem,
     Cancelled
 }
+
+public enum ReviewStatus
+{
+    Pending,
+    Approved,
+    Rejected
+}
