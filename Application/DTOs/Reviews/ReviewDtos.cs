@@ -5,8 +5,8 @@ namespace EcommerceBackend.Application.DTOs.Reviews;
 
 public sealed class CreateReviewDto
 {
-    [Required(ErrorMessage = "Имя и фамилия автора обязательны для заполнения.")]
-    [StringLength(100, MinimumLength = 2, ErrorMessage = "Имя автора должно содержать от 2 до 100 символов.")]
+    [Required(ErrorMessage = "Имя автора обязательно для заполнения.")]
+    [StringLength(80, MinimumLength = 2, ErrorMessage = "Имя автора должно содержать от 2 до 80 символов.")]
     public string AuthorName { get; init; } = string.Empty;
 
     [Required(ErrorMessage = "Оценка обязательна.")]
@@ -14,13 +14,13 @@ public sealed class CreateReviewDto
     public int Rating { get; init; }
 
     [Required(ErrorMessage = "Комментарий к отзыву обязателен.")]
-    [StringLength(3000, MinimumLength = 3, ErrorMessage = "Комментарий должен содержать от 3 до 3000 символов.")]
+    [StringLength(500, MinimumLength = 3, ErrorMessage = "Комментарий должен содержать от 3 до 500 символов.")]
     public string Comment { get; init; } = string.Empty;
 
-    [StringLength(500, ErrorMessage = "Поле 'Плюсы' не должно превышать 500 символов.")]
+    [StringLength(250, ErrorMessage = "Поле 'Плюсы' не должно превышать 250 символов.")]
     public string? Pros { get; init; }
 
-    [StringLength(500, ErrorMessage = "Поле 'Минусы' не должно превышать 500 символов.")]
+    [StringLength(250, ErrorMessage = "Поле 'Минусы' не должно превышать 250 символов.")]
     public string? Cons { get; init; }
 
     [Required(ErrorMessage = "Идентификатор товара обязателен.")]
