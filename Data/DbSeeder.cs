@@ -1,5 +1,6 @@
 using System.Text.Json;
-using Bogus;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using EcommerceBackend.Application.Security;
 using EcommerceBackend.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -12,8 +13,8 @@ public static class DbSeeder
     {
         await SeedAdminsAsync(context, cancellationToken);
         await SeedSuppliersAsync(context, cancellationToken);
-        var categoryIds = await SeedCategoriesAsync(context, cancellationToken);
-        await SeedProductsAsync(context, categoryIds, cancellationToken);
+        var categoryMap = await SeedCategoriesAsync(context, cancellationToken);
+        await SeedProductsAsync(context, categoryMap, cancellationToken);
     }
 
     private static async Task SeedAdminsAsync(AppDbContext context, CancellationToken cancellationToken)
@@ -65,170 +66,278 @@ public static class DbSeeder
 
     private static async Task SeedSuppliersAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        if (await context.Suppliers.AnyAsync(cancellationToken))
-            return;
+        if (!await context.Suppliers.AnyAsync(s => s.Name.Contains("Ялинка Року"), cancellationToken))
+        {
+            context.Suppliers.Add(new Supplier
+            {
+                Id = Guid.NewGuid(),
+                Name = "Ялинка Року (Фабрика)",
+                Contact = "+38 (098) 765-43-21",
+                City = "Івано-Франківськ",
+                Notes = "Прямий український виробник штучних литих ялинок та новорічного декору",
+                IsActive = true
+            });
+            await context.SaveChangesAsync(cancellationToken);
+        }
 
-        context.Suppliers.AddRange(
-            new Supplier
+        if (!await context.Suppliers.AnyAsync(s => s.Name == "Ёлочка-Трейд", cancellationToken))
+        {
+            context.Suppliers.Add(new Supplier
             {
                 Id = Guid.NewGuid(),
                 Name = "Ёлочка-Трейд",
                 Contact = "+380501234567",
-                City = "Харьков",
-                Notes = "Основной поставщик игрушек и декора, отсрочка оплаты 14 дней",
-                IsActive = true
-            },
-            new Supplier
-            {
-                Id = Guid.NewGuid(),
-                Name = "Confezione UA",
-                Contact = "+380671112233",
-                City = "Львов",
-                Notes = "Сладкие наборы и сувениры, предоплата 100%",
-                IsActive = true
-            },
-            new Supplier
-            {
-                Id = Guid.NewGuid(),
-                Name = "Снежный Лес",
-                Contact = "@snowforest_tm (Telegram)",
-                City = "Киев",
-                Notes = "Гирлянды и свет, приём остатков по будням после 15:00",
+                City = "Харків",
+                Notes = "Постачальник гірлянд, іграшок та декору",
                 IsActive = true
             });
-
-        await context.SaveChangesAsync(cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+        }
     }
 
-    private static async Task<List<Guid>> SeedCategoriesAsync(AppDbContext context, CancellationToken cancellationToken)
+    private static async Task<Dictionary<string, Guid>> SeedCategoriesAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        if (await context.Categories.AnyAsync(cancellationToken))
-            return await context.Categories.Select(c => c.Id).ToListAsync(cancellationToken);
-
-        var roots = new (string Name, string Slug)[]
+        var treeCategories = new (string Name, string Slug, string Title, string Desc)[]
         {
-            ("Ёлочные игрушки", "christmas-ornaments"),
-            ("Гирлянды и свет", "garlands"),
-            ("Текстиль и уют", "cozy-textile"),
-            ("Подарки и сувениры", "gifts")
+            ("Литі ялинки", "lyti-yalynky", "Литі штучні ялинки від виробника — Ялинка Року", "Купити литу штучну ялинку з доставкою по Україні. Смерека, Віденська, Буковельська."),
+            ("Преміум ялинки", "premium-yalynky", "Преміум штучні ялинки на крабах — Нью-Йорк, Тріумф, Royal", "Саморозкладні литі ялинки на шарнірах (крабах) преміум якості."),
+            ("Засніжені ялинки", "zasnizheni-yalynky", "Засніжені штучні ялинки — Альпійська та Смерека", "Штучні ялинки з ефектом натурального засніження та паморозі."),
+            ("Ялинки та туї в горщиках", "v-horshchykakh", "Штучні ялинки та туї в горщиках — для дому та офісу", "Компактні настільні ялинки в лозі та інтер'єрні вічнозелені туї."),
+            ("Ялинки ПВХ", "yalynky-pvkh", "Класичні штучні ялинки ПВХ — Казка, Елітна, Королева", "Бюджетні та пишні штучні ялинки з шишками та калиною."),
+            ("Різдвяні вінки", "rizdvyani-vinky", "Різдвяні вінки з литої хвої та декором — Ялинка Року", "Купити новорічний вінок на двері з підсвіткою та святковим декором."),
+            ("Хвойні гірлянди", "khvoyni-hirlyandy", "Штучні хвойні гірлянди з литої хвої — Ялинка Року", "Новорічні гірлянди з шишками, калиною та засніженням для перил, камінів та вікон.")
         };
 
-        var categories = roots.Select((root, index) => new Category
+        var categoryMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < treeCategories.Length; i++)
         {
-            Id = Guid.NewGuid(),
-            Name = root.Name,
-            Slug = root.Slug,
-            ParentId = null,
-            SortOrder = index,
-            IsActive = true,
-            FilterSchema = "{}",
-            MetaTitle = root.Name + " — Новый год"
-        }).ToList();
+            var (name, slug, title, desc) = treeCategories[i];
+            var existing = await context.Categories.FirstOrDefaultAsync(c => c.Slug == slug, cancellationToken);
+            if (existing is null)
+            {
+                var newCat = new Category
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    Slug = slug,
+                    ParentId = null,
+                    SortOrder = i + 1,
+                    IsActive = true,
+                    FilterSchema = "{}",
+                    MetaTitle = title,
+                    MetaDescription = desc
+                };
+                context.Categories.Add(newCat);
+                categoryMap[slug] = newCat.Id;
+            }
+            else
+            {
+                existing.IsActive = true;
+                categoryMap[slug] = existing.Id;
+            }
+        }
 
-        context.Categories.AddRange(categories);
+        // Deactivate old dummy categories without deleting them to avoid FK issues
+        var oldDummySlugs = new[] { "christmas-ornaments", "garlands", "cozy-textile", "gifts" };
+        var oldCategories = await context.Categories
+            .Where(c => oldDummySlugs.Contains(c.Slug))
+            .ToListAsync(cancellationToken);
+        foreach (var oldCat in oldCategories)
+        {
+            oldCat.IsActive = false;
+        }
+
         await context.SaveChangesAsync(cancellationToken);
-
-        return categories.Select(c => c.Id).ToList();
+        return categoryMap;
     }
 
     private static async Task SeedProductsAsync(
         AppDbContext context,
-        List<Guid> categoryIds,
+        Dictionary<string, Guid> categoryMap,
         CancellationToken cancellationToken)
     {
-        if (await context.Products.AnyAsync(cancellationToken))
-            return;
+        // Deactivate old dummy products (stock socks, mugs, test items)
+        var dummyProducts = await context.Products
+            .Where(p => p.Sku.StartsWith("NY-") || (p.MainImageUrl != null && p.MainImageUrl.Contains("picsum.photos")))
+            .ToListAsync(cancellationToken);
 
-        var supplierIds = await context.Suppliers.Select(s => s.Id).ToListAsync(cancellationToken);
-        if (supplierIds.Count == 0 || categoryIds.Count == 0)
-            return;
-
-        var catalog = new (string Name, string Slug)[]
+        foreach (var dp in dummyProducts)
         {
-            ("Шар стеклянный «Зимняя сказка» 8 см", "shar-zimnyaya-skazka"),
-            ("Шар пластиковый «Мятный коктейль» 6 см", "shar-myatnyj-koktejl"),
-            ("Шар деревянный «Хохлома» 7 см", "shar-hohloma"),
-            ("Фигурка «Дед Мороз» 20 см", "figurka-ded-moroz"),
-            ("Подвеска «Снежный гномик» 10 см", "podveska-gnomik"),
-            ("Шар коллекционный «Ретро СССР» 12 см", "shar-retro-ussr"),
-            ("Гирлянда-занавес 3×3 м, 300 LED", "gerlyanda-zanaves"),
-            ("Гирлянда «Свечи» на батарейках 2 м", "gerlyanda-sveshi"),
-            ("Световая фигура «Снежинка» IP44 50 см", "figura-snezhinka"),
-            ("Скатерть «Северные олени» 150×220", "skatert-oleni"),
-            ("Тёплые новогодние носки (2 шт)", "noski-ny"),
-            ("Набор конфет «Мандариновый вечер» 500 г", "konfety-mandarinki"),
-            ("Магнит «С Новым годом» (набор 4 шт)", "magnit-ny"),
-            ("Венок новогодний с шишками 40 см", "venok-s-shishkami"),
-            ("Топпер «Счастливого Нового года»", "topper-novogo-goda"),
-            ("Носки термоёлочные (3 пары)", "noski-termoelki"),
-            ("Свеча «Корично-апельсиновая»", "svecha-koricca"),
-            ("Упаковочная бумага «Крафт-Снежинки»", "bumaga-kraft")
-        };
+            dp.IsActive = false;
+        }
+        await context.SaveChangesAsync(cancellationToken);
 
-        const string unsplashBase = "https://images.unsplash.com/photo-";
-        string[] unsplashVerified =
-        [
-            "1512403754473-27835f7b9984",
-            "1520531158340-44015069e78e",
-            "1600585154340-be6161a56a0c"
-        ];
+        // Fetch existing YR- products
+        var existingYrProducts = await context.Products
+            .Where(p => p.Sku.StartsWith("YR-"))
+            .ToListAsync(cancellationToken);
 
-        var faker = new Faker("ru");
-        var products = new List<Product>(catalog.Length);
-
-        for (var i = 0; i < catalog.Length; i++)
+        // If any existing product has a null image, clean it up
+        if (existingYrProducts.Count > 0 && existingYrProducts.Any(p => string.IsNullOrEmpty(p.MainImageUrl)))
         {
-            var (name, slug) = catalog[i];
-            var price = faker.Random.Decimal(99m, 2499m);
-
-            products.Add(new Faker<Product>("ru")
-                .RuleFor(p => p.Id, _ => Guid.NewGuid())
-                .RuleFor(p => p.CategoryId, _ => faker.PickRandom(categoryIds))
-                .RuleFor(p => p.SupplierId, _ => faker.PickRandom(supplierIds))
-                .RuleFor(p => p.Sku, _ => $"NY-{(i + 1):D4}")
-                .RuleFor(p => p.Name, _ => name)
-                .RuleFor(p => p.Slug, _ => slug)
-                .RuleFor(p => p.Description, f => f.Lorem.Sentence(14))
-                .RuleFor(p => p.DropPrice, f => Math.Round(price * 0.6m, 2))
-                .RuleFor(p => p.Price, _ => price)
-                .RuleFor(p => p.OldPrice, f => f.Random.Bool(0.3f) ? Math.Round(price * 1.2m, 2) : null)
-                .RuleFor(p => p.Stock, f => f.Random.Int(5, 80))
-                .RuleFor(p => p.StockUpdatedAt, f => DateTime.SpecifyKind(f.Date.Recent(20), DateTimeKind.Utc))
-                .RuleFor(p => p.MainImageUrl, (f, p) => f.Random.Bool(0.3f)
-                    ? $"{unsplashBase}{f.PickRandom(unsplashVerified)}?auto=format&fit=crop&w=800&q=60"
-                    : $"https://picsum.photos/seed/ny{p.Slug}/800/600")
-                .RuleFor(p => p.Images, (f, p) => new List<ProductImage>
-                {
-                    new()
-                    {
-                        Id = Guid.NewGuid(),
-                        Url = $"https://picsum.photos/seed/ny{p.Slug}-1/800/600",
-                        Alt = $"{name} — общий вид",
-                        SortOrder = 1
-                    },
-                    new()
-                    {
-                        Id = Guid.NewGuid(),
-                        Url = $"https://picsum.photos/seed/ny{p.Slug}-2/800/600",
-                        Alt = $"{name} — детализация",
-                        SortOrder = 2
-                    }
-                })
-                .RuleFor(p => p.Attributes, f => JsonSerializer.Serialize(new
-                {
-                    material = f.PickRandom("glass", "plastic", "wood", "textile"),
-                    weightG = f.Random.Int(50, 900)
-                }))
-                .RuleFor(p => p.MetaTitle, _ => name)
-                .RuleFor(p => p.MetaDescription, f => $"{name} — купить с доставкой по Украине к Новому году.")
-                .RuleFor(p => p.WeightKg, f => f.Random.Decimal(0.05m, 2.5m))
-                .RuleFor(p => p.IsActive, _ => true)
-                .RuleFor(p => p.CreatedAt, f => DateTime.SpecifyKind(f.Date.Past(1), DateTimeKind.Utc))
-                .RuleFor(p => p.UpdatedAt, _ => DateTime.UtcNow)
-                .Generate());
+            var yrIds = existingYrProducts.Select(p => p.Id).ToList();
+            var yrImages = await context.ProductImages.Where(img => yrIds.Contains(img.ProductId)).ToListAsync(cancellationToken);
+            context.ProductImages.RemoveRange(yrImages);
+            context.Products.RemoveRange(existingYrProducts);
+            await context.SaveChangesAsync(cancellationToken);
+            existingYrProducts.Clear();
         }
 
-        context.Products.AddRange(products);
+        var existingYrSkus = existingYrProducts.Select(p => p.Sku).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingYrSlugs = existingYrProducts.Select(p => p.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var supplier = await context.Suppliers.FirstOrDefaultAsync(s => s.Name.Contains("Ялинка Року"), cancellationToken)
+                       ?? await context.Suppliers.FirstAsync(cancellationToken);
+
+        var possiblePaths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Data", "yalynka_parsed_25.json"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Data", "yalynka_parsed_25.json"),
+            Path.Combine(Directory.GetCurrentDirectory(), "yalynka_parsed_25.json")
+        };
+
+        var jsonPath = possiblePaths.FirstOrDefault(File.Exists);
+        if (jsonPath == null)
+            return;
+
+        var jsonContent = await File.ReadAllTextAsync(jsonPath, cancellationToken);
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var parsedItems = JsonSerializer.Deserialize<List<YalynkaItemDto>>(jsonContent, jsonOptions);
+
+        if (parsedItems == null || parsedItems.Count == 0)
+            return;
+
+        var defaultCategoryId = categoryMap.Values.First();
+        var now = DateTime.UtcNow;
+
+        for (var i = 0; i < parsedItems.Count; i++)
+        {
+            var item = parsedItems[i];
+            var sku = $"YR-{(i + 1):D4}";
+
+            if (existingYrSkus.Contains(sku) || existingYrSlugs.Contains(item.Slug))
+                continue;
+
+            var categoryId = categoryMap.TryGetValue(item.CategorySlug, out var catId) ? catId : defaultCategoryId;
+            var productId = Guid.NewGuid();
+
+            decimal weight = 3.0m;
+            foreach (var (k, v) in item.Attributes)
+            {
+                if (k.Contains("вага", StringComparison.OrdinalIgnoreCase))
+                {
+                    var match = Regex.Match(v, @"(\d+([.,]\d+)?)");
+                    if (match.Success && decimal.TryParse(match.Groups[1].Value.Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedWeight))
+                    {
+                        weight = parsedWeight;
+                    }
+                }
+            }
+
+            var product = new Product
+            {
+                Id = productId,
+                CategoryId = categoryId,
+                SupplierId = supplier.Id,
+                Sku = sku,
+                Name = item.Name,
+                Slug = item.Slug,
+                Description = item.Description,
+                DropPrice = item.DropPrice,
+                Price = item.Price,
+                OldPrice = item.OldPrice,
+                Stock = 20 + (i % 15),
+                StockUpdatedAt = now,
+                MainImageUrl = item.MainImage,
+                Attributes = JsonSerializer.Serialize(item.Attributes),
+                MetaTitle = $"{item.Name} — купити в інтернет-магазині «Ялинка Року»",
+                MetaDescription = $"{item.Name} від українського виробника «Ялинка Року». Швидка доставка Новою Поштою по всій Україні.",
+                WeightKg = weight,
+                IsActive = true,
+                CreatedAt = now.AddDays(-20 + (i % 15)),
+                UpdatedAt = now
+            };
+
+            var images = new List<ProductImage>();
+            var sortOrder = 1;
+
+            if (!string.IsNullOrEmpty(item.MainImage))
+            {
+                images.Add(new ProductImage
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = productId,
+                    Url = item.MainImage,
+                    Alt = $"{item.Name} — головне фото",
+                    SortOrder = sortOrder++
+                });
+            }
+
+            if (item.Gallery != null)
+            {
+                foreach (var galleryUrl in item.Gallery)
+                {
+                    if (!string.IsNullOrEmpty(galleryUrl) && galleryUrl != item.MainImage)
+                    {
+                        images.Add(new ProductImage
+                        {
+                            Id = Guid.NewGuid(),
+                            ProductId = productId,
+                            Url = galleryUrl,
+                            Alt = $"{item.Name} — детальне фото {sortOrder}",
+                            SortOrder = sortOrder++
+                        });
+                    }
+                }
+            }
+
+            product.Images = images;
+            context.Products.Add(product);
+        }
+
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    private sealed class YalynkaItemDto
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("raw_name")]
+        public string RawName { get; set; } = string.Empty;
+
+        [JsonPropertyName("slug")]
+        public string Slug { get; set; } = string.Empty;
+
+        [JsonPropertyName("category_name")]
+        public string CategoryName { get; set; } = string.Empty;
+
+        [JsonPropertyName("category_slug")]
+        public string CategorySlug { get; set; } = string.Empty;
+
+        [JsonPropertyName("supplier_model")]
+        public string SupplierModel { get; set; } = string.Empty;
+
+        [JsonPropertyName("price")]
+        public decimal Price { get; set; }
+
+        [JsonPropertyName("old_price")]
+        public decimal? OldPrice { get; set; }
+
+        [JsonPropertyName("drop_price")]
+        public decimal DropPrice { get; set; }
+
+        [JsonPropertyName("main_image")]
+        public string? MainImage { get; set; }
+
+        [JsonPropertyName("gallery")]
+        public List<string>? Gallery { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("attributes")]
+        public Dictionary<string, string> Attributes { get; set; } = new();
     }
 }

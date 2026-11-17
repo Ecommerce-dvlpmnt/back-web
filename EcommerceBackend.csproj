@@ -22,4 +22,10 @@
     <Compile Remove="EcommerceBackend.Tests/**/*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Data\yalynka_parsed_25.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
