@@ -20,7 +20,7 @@ public sealed class JwtTokenService(IConfiguration configuration) : IJwtTokenSer
 
         var issuer = configuration["Jwt:Issuer"] ?? "EcommerceBackend";
         var audience = configuration["Jwt:Audience"] ?? "EcommerceAdmin";
-        var expiryHours = configuration.GetValue<int>("Jwt:ExpiryHours", 24);
+        var expiryHours = configuration.GetValue<int>("Jwt:ExpiryHours", 720);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
