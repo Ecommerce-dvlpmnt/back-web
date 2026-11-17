@@ -8,7 +8,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceBackend.Application.Services;
 
-public sealed class OrderService(AppDbContext dbContext) : IOrderService
+public sealed class OrderService(
+    AppDbContext dbContext,
+    ILogger<OrderService>? logger = null) : IOrderService
 {
     public async Task<OrderResponse> CreateAsync(
         CreateOrderRequest request,
@@ -109,6 +111,13 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        logger?.LogInformation(
+            "Замовлення #{OrderNumber} успішно створено (PublicId: {PublicId}). Позицій: {ItemCount}, загальна сума: {TotalPrice} грн.",
+            order.OrderNumber,
+            order.PublicId,
+            order.Items.Count,
+            order.TotalPrice);
+
         return MapToResponse(order);
     }
 
@@ -208,6 +217,11 @@ public sealed class OrderService(AppDbContext dbContext) : IOrderService
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        logger?.LogInformation(
+            "Замовлення #{OrderNumber} (PublicId: {PublicId}) скасовано клієнтом. Товари повернено на склад.",
+            order.OrderNumber,
+            order.PublicId);
 
         return MapToResponse(order);
     }

@@ -7,6 +7,7 @@ using EcommerceBackend.Application.Services;
 using EcommerceBackend.Data;
 using EcommerceBackend.Data.Repositories;
 using EcommerceBackend.Domain.Enums;
+using EcommerceBackend.Infrastructure.Logging;
 using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -40,19 +41,14 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
     .Enrich.FromLogContext()
+    .Enrich.With<SensitiveDataMaskingEnricher>()
     .WriteTo.Console()
     .WriteTo.File(
         path: "logs/app-.log",
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 14));
 
-var connectionString = builder.Configuration.GetConnectionString("Default");
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException(
-        "Connection string 'Default' is missing. Configure ConnectionStrings:Default " +
-        "in local configuration or the ConnectionStrings__Default environment variable.");
-}
+var connectionString = DatabaseConnectionHelper.ResolveConnectionString(builder.Configuration);
 
 var nameTranslator = new ExactMatchNameTranslator();
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
@@ -60,6 +56,7 @@ dataSourceBuilder.MapEnum<PaymentMethod>("payment_method", nameTranslator);
 dataSourceBuilder.MapEnum<OrderStatus>("order_status", nameTranslator);
 dataSourceBuilder.MapEnum<PaymentStatus>("payment_status", nameTranslator);
 dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status", nameTranslator);
+dataSourceBuilder.MapEnum<ReviewStatus>("review_status", nameTranslator);
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddSingleton<NpgsqlDataSource>(_ => dataSource);
@@ -83,7 +80,22 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
 
 // JWT Authentication
 var jwtSecret = builder.Configuration["Jwt:Secret"]
-    ?? "SuperSecretAdminKeyForJwtAuthenticationMustBeAtLeast32BytesLong!";
+    ?? builder.Configuration["JWT_SECRET"];
+
+if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        jwtSecret = "DevelopmentOnlyInsecureKeyMustBeReplacedInProductionMin32Chars!";
+        Log.Warning("SECURITY WARNING: Using development fallback JWT key. Set 'Jwt:Secret' or 'Jwt__Secret' / 'JWT_SECRET' before deploying to production.");
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "CRITICAL SECURITY FAILURE: 'Jwt:Secret' is not configured or is shorter than 32 characters. " +
+            "Set the 'Jwt:Secret' configuration or the 'Jwt__Secret' / 'JWT_SECRET' environment variable.");
+    }
+}
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "EcommerceBackend";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EcommerceAdmin";
 
@@ -123,6 +135,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
             o.MapEnum<OrderStatus>("order_status", nameTranslator: nameTranslator);
             o.MapEnum<PaymentStatus>("payment_status", nameTranslator: nameTranslator);
             o.MapEnum<ShipmentStatus>("shipment_status", nameTranslator: nameTranslator);
+            o.MapEnum<ReviewStatus>("review_status", nameTranslator: nameTranslator);
         }));
 
 // Repositories & Domain Services
@@ -138,6 +151,8 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
@@ -194,7 +209,18 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 var app = builder.Build();
 
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+    options.GetLevel = (httpContext, _, ex) =>
+    {
+        if (ex != null || httpContext.Response.StatusCode >= 500)
+            return LogEventLevel.Error;
+        if (httpContext.Response.StatusCode >= 400)
+            return LogEventLevel.Warning;
+        return LogEventLevel.Information;
+    };
+});
 
 var migrateOnStartup = app.Configuration.GetValue<bool>("Database:MigrateOnStartup");
 if (migrateOnStartup)
@@ -204,11 +230,17 @@ if (migrateOnStartup)
     await db.Database.MigrateAsync();
 }
 
-if (app.Environment.IsDevelopment())
+if (args.Contains("--seed-only") || app.Environment.IsDevelopment())
 {
     using var seedScope = app.Services.CreateScope();
     var db = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
     await DbSeeder.SeedAsync(db);
+
+    if (args.Contains("--seed-only"))
+    {
+        Console.WriteLine("SEEDING_COMPLETED_SUCCESSFULLY");
+        return;
+    }
 }
 
 var swaggerEnabled = app.Environment.IsDevelopment() ||

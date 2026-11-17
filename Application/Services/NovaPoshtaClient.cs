@@ -57,28 +57,21 @@ public sealed class NovaPoshtaClient(
         return result;
     }
 
-    private string BaseUrl
-    {
-        get
-        {
-            var value = configuration["NovaPoshta:BaseUrl"];
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new InvalidOperationException("Налаштування NovaPoshta:BaseUrl не задане.");
-            }
-
-            return value;
-        }
-    }
+    private string BaseUrl =>
+        configuration["NovaPoshta:BaseUrl"]
+        ?? configuration["NOVAPOSHTA_BASEURL"]
+        ?? "https://api.novaposhta.ua/v2.0/json/";
 
     private string ApiKey
     {
         get
         {
-            var value = configuration["NovaPoshta:ApiKey"];
+            var value = configuration["NovaPoshta:ApiKey"]
+                ?? configuration["NOVAPOSHTA_APIKEY"];
             if (string.IsNullOrWhiteSpace(value))
             {
-                throw new InvalidOperationException("Налаштування NovaPoshta:ApiKey не задане.");
+                throw new InvalidOperationException(
+                    "Налаштування 'NovaPoshta:ApiKey' не задане. Вкажіть ключ у файлі конфігурації або змінній середовища 'NovaPoshta__ApiKey' чи 'NOVAPOSHTA_APIKEY'.");
             }
 
             return value;

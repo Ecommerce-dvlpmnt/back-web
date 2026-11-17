@@ -24,6 +24,8 @@ namespace EcommerceBackend.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "order_status", new[] { "Cancelled", "Confirmed", "Delivered", "New", "Packed", "Refused", "Returned", "Shipped" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "payment_method", new[] { "CashOnDelivery", "Online" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "payment_status", new[] { "Failed", "Paid", "Pending", "Refunded" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review_status", new[] { "Approved", "Pending", "Rejected" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review_status", "review_status", new[] { "pending", "approved", "rejected" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "shipment_status", new[] { "Cancelled", "Confirmed", "Pending", "Problem", "Requested", "Shipped" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -897,6 +899,92 @@ namespace EcommerceBackend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.Review", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("AdminComment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("AdminComment");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("AuthorName");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("CategoryId");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("Comment");
+
+                    b.Property<string>("Cons")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("Cons");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ProductId");
+
+                    b.Property<string>("Pros")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("Pros");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer")
+                        .HasColumnName("Rating");
+
+                    b.Property<ReviewStatus>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("review_status")
+                        .HasColumnName("Status")
+                        .HasDefaultValueSql("'Pending'");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("UpdatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_Reviews_CategoryId_Approved")
+                        .HasFilter("\"Status\" = 'Approved' AND \"CategoryId\" IS NOT NULL");
+
+                    b.HasIndex("ProductId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_Reviews_ProductId_Approved")
+                        .HasFilter("\"Status\" = 'Approved'");
+
+                    b.HasIndex("Status", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_Reviews_Status_CreatedAt");
+
+                    b.ToTable("Reviews", null, t =>
+                        {
+                            t.HasCheckConstraint("Reviews_Rating_check", "\"Rating\" >= 1 AND \"Rating\" <= 5");
+                        });
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Supplier", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1118,6 +1206,26 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("RelatedProduct");
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.Review", b =>
+                {
+                    b.HasOne("EcommerceBackend.Domain.Entities.Category", "Category")
+                        .WithMany("Reviews")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("Reviews_CategoryId_fkey");
+
+                    b.HasOne("EcommerceBackend.Domain.Entities.Product", "Product")
+                        .WithMany("Reviews")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("Reviews_ProductId_fkey");
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Admin", b =>
                 {
                     b.Navigation("Deposits");
@@ -1137,6 +1245,8 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Products");
+
+                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Order", b =>
@@ -1157,6 +1267,8 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("OrderItems");
 
                     b.Navigation("RelatedLinks");
+
+                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Supplier", b =>

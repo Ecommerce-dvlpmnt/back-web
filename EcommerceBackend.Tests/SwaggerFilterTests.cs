@@ -61,11 +61,36 @@ public class SwaggerFilterTests
     }
 
     [Fact]
+    public void Admin_Reviews_Endpoint_Should_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(AdminReviewsController).GetMethod(nameof(AdminReviewsController.GetAll))!;
+        var context = CreateContext(typeof(AdminReviewsController), method, "api/admin/reviews");
+
+        _filter.Apply(operation, context);
+
+        Assert.NotNull(operation.Security);
+        Assert.Single(operation.Security);
+    }
+
+    [Fact]
     public void Public_Client_Endpoint_Should_NOT_Have_Lock()
     {
         var operation = new OpenApiOperation();
         var method = typeof(ProductsController).GetMethod(nameof(ProductsController.GetAll))!;
         var context = CreateContext(typeof(ProductsController), method, "api/products");
+
+        _filter.Apply(operation, context);
+
+        Assert.Null(operation.Security);
+    }
+
+    [Fact]
+    public void Public_Reviews_Endpoint_Should_NOT_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(ReviewsController).GetMethod(nameof(ReviewsController.Create))!;
+        var context = CreateContext(typeof(ReviewsController), method, "api/reviews");
 
         _filter.Apply(operation, context);
 
