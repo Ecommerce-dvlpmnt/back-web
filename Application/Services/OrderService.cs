@@ -19,6 +19,37 @@ public sealed class OrderService(
         if (request.Items is null || request.Items.Count == 0)
             throw new ArgumentException("An order must contain at least one item.", nameof(request));
 
+        var (firstName, lastName) = NormalizeCustomerName(
+            request.CustomerFirstName,
+            request.CustomerLastName);
+
+        if (!PhoneNumberNormalizer.TryNormalize(request.CustomerPhone, out var phone))
+        {
+            throw new ArgumentException(
+                "Некоректний номер телефону. Вкажіть український номер у форматі +380XXXXXXXXX.",
+                nameof(request));
+        }
+
+        var email = request.CustomerEmail?.Trim();
+        var cityName = RequireDeliveryField(
+            request.DeliveryCityName,
+            "Вкажіть місто доставки.",
+            150,
+            "Назва міста не може перевищувати 150 символів.");
+        var warehouseName = RequireDeliveryField(
+            request.DeliveryWarehouseName,
+            "Вкажіть відділення або поштомат Нової Пошти.",
+            250,
+            "Назва відділення не може перевищувати 250 символів.");
+
+        if (!string.IsNullOrWhiteSpace(request.DeliveryType)
+            && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
+        {
+            warehouseName = $"{request.DeliveryType}: {warehouseName}";
+        }
+
+        var comment = request.CustomerComment?.Trim();
+
         var requestedQuantities = AggregateQuantities(request.Items);
         var productIds = requestedQuantities.Keys.Order().ToArray();
 
@@ -37,34 +68,6 @@ public sealed class OrderService(
             throw new InsufficientStockException(shortages);
         }
 
-        var firstName = request.CustomerFirstName?.Trim() ?? "";
-        var lastName = request.CustomerLastName?.Trim() ?? "";
-
-        if (string.IsNullOrWhiteSpace(lastName) && !string.IsNullOrWhiteSpace(firstName))
-        {
-            var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            firstName = parts[0];
-            lastName = parts.Length > 1 ? parts[1] : parts[0];
-        }
-
-        if (string.IsNullOrWhiteSpace(firstName)) firstName = "Покупець";
-        if (string.IsNullOrWhiteSpace(lastName)) lastName = firstName;
-
-        var phone = request.CustomerPhone?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(phone))
-            throw new ArgumentException("Номер телефону є обов'язковим для оформлення замовлення.", nameof(request));
-
-        var email = request.CustomerEmail?.Trim();
-        var cityName = request.DeliveryCityName?.Trim();
-        var warehouseName = request.DeliveryWarehouseName?.Trim();
-
-        if (!string.IsNullOrWhiteSpace(request.DeliveryType) && !string.IsNullOrWhiteSpace(warehouseName)
-            && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
-        {
-            warehouseName = $"{request.DeliveryType}: {warehouseName}";
-        }
-
-        var comment = request.CustomerComment?.Trim();
         var now = DateTime.UtcNow;
 
         var order = new Order
@@ -376,6 +379,57 @@ public sealed class OrderService(
                 product.StockUpdatedAt = now;
             }
         }
+    }
+
+    private static (string FirstName, string LastName) NormalizeCustomerName(
+        string? firstNameValue,
+        string? lastNameValue)
+    {
+        var firstName = firstNameValue?.Trim();
+        if (string.IsNullOrWhiteSpace(firstName) || firstName.Length < 2)
+            throw new ArgumentException("Вкажіть ім'я покупця (мінімум 2 символи).", nameof(firstNameValue));
+
+        if (firstName.Length > 100)
+            throw new ArgumentException("Ім'я покупця не може перевищувати 100 символів.", nameof(firstNameValue));
+
+        var lastName = lastNameValue?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(lastName))
+        {
+            var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 1)
+            {
+                firstName = parts[0];
+                lastName = parts[1].Trim();
+            }
+            else
+            {
+                lastName = firstName;
+            }
+        }
+
+        if (firstName.Length < 2)
+            throw new ArgumentException("Вкажіть ім'я покупця (мінімум 2 символи).", nameof(firstNameValue));
+
+        if (lastName.Length > 100)
+            throw new ArgumentException("Прізвище покупця не може перевищувати 100 символів.", nameof(lastNameValue));
+
+        return (firstName, lastName);
+    }
+
+    private static string RequireDeliveryField(
+        string? value,
+        string requiredMessage,
+        int maxLength,
+        string maxLengthMessage)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new ArgumentException(requiredMessage, nameof(value));
+
+        if (normalized.Length > maxLength)
+            throw new ArgumentException(maxLengthMessage, nameof(value));
+
+        return normalized;
     }
 
     private static Dictionary<Guid, int> AggregateQuantities(

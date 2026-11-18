@@ -7,10 +7,15 @@ namespace EcommerceBackend.Application.DTOs.Orders;
 public sealed record CreateOrderRequest
 {
     // First and last name
+    [Required(ErrorMessage = "Вкажіть ім'я покупця.")]
+    [StringLength(100, MinimumLength = 2, ErrorMessage = "Ім'я покупця має містити від 2 до 100 символів.")]
     public string? CustomerFirstName { get; init; }
+
+    [StringLength(100, ErrorMessage = "Прізвище покупця не може перевищувати 100 символів.")]
     public string? CustomerLastName { get; init; }
 
-    [Required, StringLength(30)]
+    [Required(ErrorMessage = "Вкажіть номер телефону.")]
+    [StringLength(30, ErrorMessage = "Номер телефону не може перевищувати 30 символів.")]
     public required string CustomerPhone { get; init; }
 
     [EmailAddress, StringLength(150)]
@@ -21,8 +26,15 @@ public sealed record CreateOrderRequest
     // Delivery fields (Nova Poshta branch / postomat / address)
     public string? DeliveryType { get; init; } // "Warehouse", "Postomat", "Branch", "Поштомат", "Відділення"
     public string? DeliveryCityRef { get; init; }
+
+    [Required(ErrorMessage = "Вкажіть місто доставки.")]
+    [StringLength(150, ErrorMessage = "Назва міста не може перевищувати 150 символів.")]
     public string? DeliveryCityName { get; init; }
+
     public string? DeliveryWarehouseRef { get; init; }
+
+    [Required(ErrorMessage = "Вкажіть відділення або поштомат Нової Пошти.")]
+    [StringLength(250, ErrorMessage = "Назва відділення не може перевищувати 250 символів.")]
     public string? DeliveryWarehouseName { get; init; }
 
     public PaymentMethod PaymentMethod { get; init; } = PaymentMethod.CashOnDelivery;
