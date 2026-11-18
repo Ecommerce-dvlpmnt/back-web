@@ -297,33 +297,45 @@ public sealed class OrderService(
         Guid? adminId = null,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         var order = await dbContext.Orders
-            .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Orders\" WHERE \"Id\" = {id} FOR UPDATE")
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (order is null)
         {
             throw new KeyNotFoundException($"Замовлення з ID '{id}' не знайдено.");
         }
 
+        await dbContext.Entry(order)
+            .Collection(o => o.Items)
+            .LoadAsync(cancellationToken);
+
         var oldStatus = order.OrderStatus;
         var newStatus = request.Status;
 
         if (oldStatus == newStatus)
         {
+            await transaction.CommitAsync(cancellationToken);
             return MapToResponse(order);
         }
 
-        if (newStatus == OrderStatus.Cancelled
-            && oldStatus != OrderStatus.Cancelled
-            && oldStatus != OrderStatus.Refused
-            && oldStatus != OrderStatus.Returned)
+        var now = DateTime.UtcNow;
+
+        if (OrderStockTransitionPolicy.RequiresStockReturn(oldStatus, newStatus))
         {
-            await ReturnStockAsync(order, DateTime.UtcNow, cancellationToken);
+            await ReturnStockAsync(order, now, cancellationToken);
+        }
+        else if (OrderStockTransitionPolicy.RequiresStockDeduction(oldStatus, newStatus))
+        {
+            await DeductStockAsync(order, now, cancellationToken);
         }
 
         order.OrderStatus = newStatus;
-        order.UpdatedAt = DateTime.UtcNow;
+        order.UpdatedAt = now;
 
         dbContext.OrderStatusHistory.Add(new OrderStatusHistory
         {
@@ -333,10 +345,11 @@ public sealed class OrderService(
             NewStatus = newStatus,
             ChangedByAdminId = adminId,
             Comment = request.Comment,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return MapToResponse(order);
     }
 
@@ -378,6 +391,37 @@ public sealed class OrderService(
                 product.Stock += item.Quantity;
                 product.StockUpdatedAt = now;
             }
+        }
+    }
+
+    private async Task DeductStockAsync(
+        Order order,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var requestedQuantities = order.Items
+            .GroupBy(item => item.ProductId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(item => item.Quantity));
+
+        var productIds = requestedQuantities.Keys.Order().ToArray();
+        var products = await dbContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
+        if (shortages.Count > 0)
+        {
+            throw new InsufficientStockException(shortages);
+        }
+
+        foreach (var item in order.Items)
+        {
+            var product = products[item.ProductId];
+            product.Stock -= item.Quantity;
+            product.StockUpdatedAt = now;
         }
     }
 
