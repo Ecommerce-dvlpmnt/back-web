@@ -3,6 +3,7 @@ using EcommerceBackend.Application.Exceptions;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EcommerceBackend.Controllers;
 
@@ -13,9 +14,11 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
 {
     /// <summary>Оформить заказ из корзины (публичный эндпоинт витрины).</summary>
     [HttpPost]
+    [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(StockConflictResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<OrderResponse>> Create(
         [FromBody] CreateOrderRequest request,
         CancellationToken cancellationToken)

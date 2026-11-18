@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Security;
 using EcommerceBackend.Application.Services;
@@ -13,6 +14,7 @@ using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -20,6 +22,18 @@ using Npgsql;
 using Serilog;
 using Serilog.Events;
 using Swashbuckle.AspNetCore.SwaggerGen;
+
+static RateLimitPartition<string> CreateFixedWindowPartition(HttpContext context, int permitLimit)
+{
+    var partitionKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+    {
+        PermitLimit = permitLimit,
+        Window = TimeSpan.FromMinutes(1),
+        QueueLimit = 0,
+        AutoReplenishment = true
+    });
+}
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -77,6 +91,32 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
 
     policy.AllowAnyMethod().AllowAnyHeader();
 }));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("auth-limit", context => CreateFixedWindowPartition(context, permitLimit: 5));
+    options.AddPolicy("order-limit", context => CreateFixedWindowPartition(context, permitLimit: 10));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers["Retry-After"] =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new ErrorResponse(
+                StatusCodes.Status429TooManyRequests,
+                "Занадто багато запитів. Спробуйте пізніше.",
+                Activity.Current?.TraceId.ToString() ?? context.HttpContext.TraceIdentifier),
+            cancellationToken);
+    };
+});
 
 // JWT Authentication
 var jwtSecret = builder.Configuration["Jwt:Secret"]
@@ -262,7 +302,9 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 
+app.UseRouting();
 app.UseCors("Frontend");
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
