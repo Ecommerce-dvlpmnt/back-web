@@ -10,6 +10,7 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class OrderService(
     AppDbContext dbContext,
+    IAuditLogService auditLogService,
     ILogger<OrderService>? logger = null) : IOrderService
 {
     public async Task<OrderResponse> CreateAsync(
@@ -347,6 +348,21 @@ public sealed class OrderService(
             Comment = request.Comment,
             CreatedAt = now
         });
+
+        await auditLogService.LogAsync(
+            AuditLogActions.OrderStatusChanged,
+            AuditLogEntityTypes.Order,
+            order.Id.ToString(),
+            new
+            {
+                orderNumber = order.OrderNumber,
+                publicId = order.PublicId,
+                before = new { status = oldStatus.ToString() },
+                after = new { status = newStatus.ToString() },
+                changedFields = new[] { "status" },
+                comment = request.Comment
+            },
+            cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

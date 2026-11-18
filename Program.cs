@@ -180,6 +180,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
 
 // Repositories & Domain Services
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ICurrencyRateService, NbuCurrencyRateService>();
 builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
 {
@@ -194,6 +195,7 @@ builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
