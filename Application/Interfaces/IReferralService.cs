@@ -18,6 +18,14 @@ public interface IReferralService
         Guid orderId,
         CancellationToken cancellationToken = default);
 
+    Task<ReferralRewardResult?> ProcessDeliveredOrderRewardAsync(
+        Guid orderId,
+        CancellationToken cancellationToken = default);
+
+    Task<ReferralRewardResult?> ProcessCancelledOrderRewardAsync(
+        Guid orderId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<PartnerResponse>> GetAllPartnersAsync(
         CancellationToken cancellationToken = default);
 
@@ -31,5 +39,23 @@ public interface IReferralService
 
     Task<ReferralCodeValidationResponse> ValidateCodeAsync(
         string? referralCode,
+        CancellationToken cancellationToken = default);
+
+    Task<BotPartnerProfileResponse?> GetBotPartnerProfileAsync(
+        long telegramUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<BotPartnerProfileResponse> RegisterBotPartnerAsync(
+        BotRegisterPartnerRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<BotPartnerStatsResponse?> GetBotPartnerStatsAsync(
+        long telegramUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<BotPartnerOrdersResponse?> GetBotPartnerOrdersAsync(
+        long telegramUserId,
+        int limit = 20,
+        int offset = 0,
         CancellationToken cancellationToken = default);
 }

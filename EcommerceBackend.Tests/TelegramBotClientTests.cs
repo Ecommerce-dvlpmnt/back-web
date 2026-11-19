@@ -49,6 +49,93 @@ public sealed class TelegramBotClientTests
     }
 
     [Fact]
+    public async Task SendReferralRewardPendingNotificationAsync_SendsPendingMessage()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org/",
+                ["Telegram:BotToken"] = "123456:ABC-TestToken"
+            });
+
+        var reward = CreateSampleReward();
+
+        var sent = await client.SendReferralRewardPendingNotificationAsync(reward);
+
+        Assert.True(sent);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var text = doc.RootElement.GetProperty("text").GetString();
+        Assert.NotNull(text);
+        Assert.Contains("#42", text);
+        Assert.Contains("холді", text);
+        Assert.Contains("150.00", text);
+    }
+
+    [Fact]
+    public async Task SendReferralRewardDeliveredNotificationAsync_SendsDeliveredMessage()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org/",
+                ["Telegram:BotToken"] = "123456:ABC-TestToken"
+            });
+
+        var reward = CreateSampleReward();
+
+        var sent = await client.SendReferralRewardDeliveredNotificationAsync(reward);
+
+        Assert.True(sent);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var text = doc.RootElement.GetProperty("text").GetString();
+        Assert.NotNull(text);
+        Assert.Contains("#42", text);
+        Assert.Contains("вручено", text);
+        Assert.Contains("450.00", text);
+    }
+
+    [Fact]
+    public async Task SendReferralRewardCancelledNotificationAsync_SendsCancelledMessage()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org/",
+                ["Telegram:BotToken"] = "123456:ABC-TestToken"
+            });
+
+        var reward = CreateSampleReward();
+
+        var sent = await client.SendReferralRewardCancelledNotificationAsync(reward, "відмова на пошті");
+
+        Assert.True(sent);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var text = doc.RootElement.GetProperty("text").GetString();
+        Assert.NotNull(text);
+        Assert.Contains("#42", text);
+        Assert.Contains("скасовано або повернено", text);
+        Assert.Contains("відмова на пошті", text);
+    }
+
+    [Fact]
     public async Task SendReferralRewardNotificationAsync_ReturnsFalse_WhenBotTokenIsMissing()
     {
         var handler = new RecordingHttpMessageHandler(new HttpResponseMessage(HttpStatusCode.OK));

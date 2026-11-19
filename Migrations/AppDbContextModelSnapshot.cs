@@ -430,6 +430,14 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValue(0m)
                         .HasColumnName("ReferralRewardAmount");
 
+                    b.Property<string>("ReferralRewardStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("None")
+                        .HasColumnName("ReferralRewardStatus");
+
                     b.Property<Guid?>("ReferrerId")
                         .HasColumnType("uuid")
                         .HasColumnName("ReferrerId");
@@ -496,6 +504,9 @@ namespace EcommerceBackend.Migrations
 
                     b.HasIndex("ReferrerId")
                         .HasDatabaseName("IX_Orders_ReferrerId");
+
+                    b.HasIndex("ReferrerId", "ReferralRewardStatus")
+                        .HasDatabaseName("IX_Orders_Referrer_RewardStatus");
 
                     b.ToTable("Orders", (string)null);
                 });

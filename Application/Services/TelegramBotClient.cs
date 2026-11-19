@@ -19,11 +19,80 @@ public sealed class TelegramBotClient(
     {
         ArgumentNullException.ThrowIfNull(reward);
 
-        if (reward.PartnerTelegramUserId <= 0)
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "Нове оплачене замовлення #{0} на суму {1:0.00} грн.\nНараховано {2:0.##}% реферальної винагороди: {3:0.00} грн.\nЗагальний баланс: {4:0.00} грн.",
+            reward.OrderNumber,
+            reward.OrderTotal,
+            reward.CommissionPercent,
+            reward.RewardAmount,
+            reward.PartnerTotalEarned);
+
+        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+    }
+
+    public async Task<bool> SendReferralRewardPendingNotificationAsync(
+        ReferralRewardResult reward,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reward);
+
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "⏳ Нове замовлення #{0} на суму {1:0.00} грн!\nОчікувана реферальна винагорода ({2:0.##}%): +{3:0.00} грн (в холді до отримання клієнтом).",
+            reward.OrderNumber,
+            reward.OrderTotal,
+            reward.CommissionPercent,
+            reward.RewardAmount);
+
+        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+    }
+
+    public async Task<bool> SendReferralRewardDeliveredNotificationAsync(
+        ReferralRewardResult reward,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reward);
+
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "💰 Замовлення #{0} успішно вручено клієнту!\nВинагорода +{1:0.00} грн зарахована на ваш баланс до виплати.\nЗагальний доступний баланс: {2:0.00} грн.",
+            reward.OrderNumber,
+            reward.RewardAmount,
+            reward.PartnerTotalEarned);
+
+        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+    }
+
+    public async Task<bool> SendReferralRewardCancelledNotificationAsync(
+        ReferralRewardResult reward,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reward);
+
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "❌ Замовлення #{0} скасовано або повернено ({1}).\nОчікувану винагороду {2:0.00} грн анульовано.\nПоточний баланс: {3:0.00} грн.",
+            reward.OrderNumber,
+            reason,
+            reward.RewardAmount,
+            reward.PartnerTotalEarned);
+
+        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+    }
+
+    private async Task<bool> SendMessageAsync(
+        long telegramUserId,
+        Guid partnerId,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        if (telegramUserId <= 0)
         {
             logger.LogWarning(
                 "Неможливо надіслати сповіщення в Telegram для партнера {PartnerId}: некоректний TelegramUserId.",
-                reward.PartnerId);
+                partnerId);
             return false;
         }
 
@@ -32,7 +101,7 @@ public sealed class TelegramBotClient(
         {
             logger.LogWarning(
                 "Налаштування Telegram:BotToken не задане. Сповіщення партнеру {PartnerId} пропущено.",
-                reward.PartnerId);
+                partnerId);
             return false;
         }
 
@@ -45,16 +114,7 @@ public sealed class TelegramBotClient(
             ? $"{baseUrl}{botToken}/sendMessage"
             : $"{baseUrl}/bot{botToken}/sendMessage";
 
-        var text = string.Format(
-            CultureInfo.InvariantCulture,
-            "Нове оплачене замовлення #{0} на суму {1:0.00} грн.\nНараховано {2:0.##}% реферальної винагороди: {3:0.00} грн.\nЗагальний баланс: {4:0.00} грн.",
-            reward.OrderNumber,
-            reward.OrderTotal,
-            reward.CommissionPercent,
-            reward.RewardAmount,
-            reward.PartnerTotalEarned);
-
-        var payload = new TelegramSendMessageRequest(reward.PartnerTelegramUserId, text);
+        var payload = new TelegramSendMessageRequest(telegramUserId, text);
 
         try
         {
@@ -66,7 +126,7 @@ public sealed class TelegramBotClient(
                 logger.LogWarning(
                     "Telegram Bot API повернув статус {StatusCode} при відправці сповіщення партнеру {PartnerId}.",
                     (int)response.StatusCode,
-                    reward.PartnerId);
+                    partnerId);
                 return false;
             }
 
@@ -79,9 +139,8 @@ public sealed class TelegramBotClient(
         catch (Exception)
         {
             logger.LogWarning(
-                "Помилка при відправці сповіщення в Telegram для партнера {PartnerId} (замовлення #{OrderNumber}).",
-                reward.PartnerId,
-                reward.OrderNumber);
+                "Помилка при відправці сповіщення в Telegram для партнера {PartnerId}.",
+                partnerId);
             return false;
         }
     }

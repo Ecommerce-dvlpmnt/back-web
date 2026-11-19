@@ -89,8 +89,6 @@ public sealed class OrderService(
             UpdatedAt = now
         };
 
-        await referralService.AttachReferrerAsync(order, request.ReferralCode, cancellationToken);
-
         foreach (var (productId, quantity) in requestedQuantities)
         {
             var product = products[productId];
@@ -112,9 +110,35 @@ public sealed class OrderService(
             order.TotalProfit += (product.Price - product.DropPrice) * quantity;
         }
 
+        await referralService.AttachReferrerAsync(order, request.ReferralCode, cancellationToken);
+
         dbContext.Orders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        if (order.ReferrerId.HasValue && order.ReferralRewardAmount > 0m)
+        {
+            var partner = await dbContext.Partners
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == order.ReferrerId.Value, cancellationToken);
+
+            if (partner is not null)
+            {
+                _ = telegramBotClient.SendReferralRewardPendingNotificationAsync(
+                    new ReferralRewardResult(
+                        order.Id,
+                        order.OrderNumber,
+                        partner.Id,
+                        partner.TelegramUserId,
+                        partner.Name,
+                        order.TotalPrice,
+                        partner.CommissionPercent,
+                        order.ReferralRewardAmount,
+                        partner.TotalEarned,
+                        ReferralRewardStatus.Pending),
+                    cancellationToken);
+            }
+        }
 
         logger?.LogInformation(
             "Замовлення #{OrderNumber} успішно створено (PublicId: {PublicId}). Позицій: {ItemCount}, загальна сума: {TotalPrice} грн.",
@@ -317,7 +341,7 @@ public sealed class OrderService(
             return MapToResponse(order);
         }
 
-        if (newStatus == OrderStatus.Cancelled
+        if ((newStatus == OrderStatus.Cancelled || newStatus == OrderStatus.Refused || newStatus == OrderStatus.Returned)
             && oldStatus != OrderStatus.Cancelled
             && oldStatus != OrderStatus.Refused
             && oldStatus != OrderStatus.Returned)
@@ -340,6 +364,30 @@ public sealed class OrderService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (newStatus == OrderStatus.Delivered)
+        {
+            var reward = await referralService.ProcessDeliveredOrderRewardAsync(order.Id, cancellationToken);
+            if (reward is not null)
+            {
+                _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(reward, cancellationToken);
+            }
+        }
+        else if (newStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
+        {
+            var reward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+            if (reward is not null)
+            {
+                var reason = newStatus switch
+                {
+                    OrderStatus.Refused => "відмова на пошті",
+                    OrderStatus.Returned => "повернення товару",
+                    _ => "скасовано"
+                };
+                _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(reward, reason, cancellationToken);
+            }
+        }
+
         return MapToResponse(order);
     }
 
@@ -663,6 +711,7 @@ public sealed class OrderService(
             ReferrerName: order.Referrer?.Name,
             ReferralCode: order.Referrer?.ReferralCode,
             ReferralRewardAmount: order.ReferralRewardAmount,
-            IsReferralRewardPaid: order.IsReferralRewardPaid);
+            IsReferralRewardPaid: order.IsReferralRewardPaid,
+            ReferralRewardStatus: order.ReferralRewardStatus);
     }
 }

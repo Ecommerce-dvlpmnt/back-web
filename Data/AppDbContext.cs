@@ -303,11 +303,13 @@ public class AppDbContext : DbContext
         e.Property(x => x.ReferrerId).HasColumnName("ReferrerId");
         e.Property(x => x.ReferralRewardAmount).HasColumnName("ReferralRewardAmount").HasPrecision(10, 2).HasDefaultValue(0m);
         e.Property(x => x.IsReferralRewardPaid).HasColumnName("IsReferralRewardPaid").HasDefaultValue(false);
+        e.Property(x => x.ReferralRewardStatus).HasColumnName("ReferralRewardStatus").HasMaxLength(20).HasConversion<string>().HasDefaultValue(ReferralRewardStatus.None);
         e.Property(x => x.AdminComment).HasColumnName("AdminComment");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
 
         e.HasIndex(x => x.ReferrerId).HasDatabaseName("IX_Orders_ReferrerId");
+        e.HasIndex(x => new { x.ReferrerId, x.ReferralRewardStatus }).HasDatabaseName("IX_Orders_Referrer_RewardStatus");
         e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("Orders_PublicId_key");
         e.HasIndex(x => x.OrderNumber).IsUnique().HasDatabaseName("Orders_OrderNumber_key");
         e.HasIndex(x => x.CustomerPhone).HasDatabaseName("IX_Orders_CustomerPhone");
