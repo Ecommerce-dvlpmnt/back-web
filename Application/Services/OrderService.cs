@@ -1,4 +1,5 @@
 using EcommerceBackend.Application.DTOs.Orders;
+using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Exceptions;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Data;
@@ -11,6 +12,7 @@ namespace EcommerceBackend.Application.Services;
 public sealed class OrderService(
     AppDbContext dbContext,
     IReferralService referralService,
+    ITelegramBotClient telegramBotClient,
     ILogger<OrderService>? logger = null) : IOrderService
 {
     public async Task<OrderResponse> CreateAsync(
@@ -143,6 +145,7 @@ public sealed class OrderService(
         var order = await dbContext.Orders
             .AsNoTracking()
             .Include(o => o.Items)
+            .Include(o => o.Referrer)
             .Include(o => o.StatusHistory)
                 .ThenInclude(h => h.ChangedByAdmin)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
@@ -347,6 +350,7 @@ public sealed class OrderService(
     {
         var order = await dbContext.Orders
             .Include(o => o.Items)
+            .Include(o => o.Referrer)
             .Include(o => o.StatusHistory)
                 .ThenInclude(h => h.ChangedByAdmin)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
@@ -358,6 +362,177 @@ public sealed class OrderService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return MapToAdminDetailResponse(order);
+    }
+
+    public async Task<OrderPaymentConfirmationResponse> ConfirmPaymentAsync(
+        Guid id,
+        ConfirmOrderPaymentRequest? request = null,
+        Guid? adminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ReferralRewardResult? referralReward;
+        Order order;
+
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        {
+            order = await dbContext.Orders
+                .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {id} FOR UPDATE")
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException($"Замовлення з ID '{id}' не знайдено.");
+
+            if (order.OrderStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
+            {
+                throw new InvalidOperationException("Не можна підтвердити оплату для скасованого або поверненого замовлення.");
+            }
+
+            var now = DateTime.UtcNow;
+            if (order.PaymentStatus != PaymentStatus.Paid)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.UpdatedAt = now;
+            }
+
+            ApplyPaymentMetadata(order, request?.PaymentProvider, request?.ExternalPaymentId, request?.Comment, now);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            referralReward = await referralService.ProcessPaidOrderAsync(order.Id, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        logger?.LogInformation(
+            "Оплату замовлення #{OrderNumber} (PublicId: {PublicId}) підтверджено.",
+            order.OrderNumber,
+            order.PublicId);
+
+        var telegramNotificationSent = false;
+        if (referralReward is not null)
+        {
+            telegramNotificationSent = await telegramBotClient.SendReferralRewardNotificationAsync(
+                referralReward,
+                cancellationToken);
+        }
+
+        return new OrderPaymentConfirmationResponse(
+            MapToResponse(order),
+            referralReward,
+            telegramNotificationSent);
+    }
+
+    public async Task<OrderPaymentConfirmationResponse> ProcessPaymentWebhookAsync(
+        PaymentWebhookRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var targetOrderId = await ResolveWebhookOrderIdAsync(request, cancellationToken);
+
+        if (request.PaymentStatus == PaymentStatus.Paid)
+        {
+            var confirmRequest = new ConfirmOrderPaymentRequest
+            {
+                PaymentProvider = request.PaymentProvider,
+                ExternalPaymentId = request.ExternalPaymentId
+            };
+
+            return await ConfirmPaymentAsync(targetOrderId, confirmRequest, null, cancellationToken);
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var order = await dbContext.Orders
+            .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {targetOrderId} FOR UPDATE")
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException($"Замовлення з ID '{targetOrderId}' не знайдено.");
+
+        if (order.PaymentStatus == PaymentStatus.Paid && request.PaymentStatus == PaymentStatus.Failed)
+        {
+            throw new InvalidOperationException("Не можна змінити статус вже оплаченого замовлення на Failed.");
+        }
+
+        var now = DateTime.UtcNow;
+        order.PaymentStatus = request.PaymentStatus;
+        order.UpdatedAt = now;
+
+        ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, null, now);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new OrderPaymentConfirmationResponse(
+            MapToResponse(order),
+            null,
+            false);
+    }
+
+    private async Task<Guid> ResolveWebhookOrderIdAsync(
+        PaymentWebhookRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.OrderId.HasValue)
+        {
+            return request.OrderId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OrderPublicId))
+        {
+            var publicId = request.OrderPublicId.Trim();
+            var byPublicId = await dbContext.Orders
+                .AsNoTracking()
+                .Where(o => o.PublicId == publicId)
+                .Select(o => (Guid?)o.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return byPublicId
+                ?? throw new KeyNotFoundException($"Замовлення з публічним кодом '{publicId}' не знайдено.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ExternalPaymentId))
+        {
+            var externalId = request.ExternalPaymentId.Trim();
+            var byExternalId = await dbContext.Orders
+                .AsNoTracking()
+                .Where(o => o.ExternalPaymentId == externalId)
+                .Select(o => (Guid?)o.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return byExternalId
+                ?? throw new KeyNotFoundException($"Замовлення із зовнішнім ID платежу '{externalId}' не знайдено.");
+        }
+
+        throw new ArgumentException("Потрібно вказати OrderId, OrderPublicId або ExternalPaymentId.", nameof(request));
+    }
+
+    private static void ApplyPaymentMetadata(
+        Order order,
+        string? paymentProvider,
+        string? externalPaymentId,
+        string? comment,
+        DateTime now)
+    {
+        if (!string.IsNullOrWhiteSpace(paymentProvider))
+        {
+            order.PaymentProvider = paymentProvider.Trim();
+            order.UpdatedAt = now;
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalPaymentId))
+        {
+            order.ExternalPaymentId = externalPaymentId.Trim();
+            order.UpdatedAt = now;
+        }
+
+        if (!string.IsNullOrWhiteSpace(comment))
+        {
+            var trimmedComment = comment.Trim();
+            order.AdminComment = string.IsNullOrWhiteSpace(order.AdminComment)
+                ? trimmedComment
+                : $"{order.AdminComment}\n{trimmedComment}";
+            order.UpdatedAt = now;
+        }
     }
 
     private async Task ReturnStockAsync(
@@ -431,7 +606,8 @@ public sealed class OrderService(
                     item.Quantity,
                     item.UnitPrice,
                     item.UnitPrice * item.Quantity))
-                .ToArray());
+                .ToArray(),
+            ReferrerId: order.ReferrerId);
     }
 
     private static AdminOrderDetailResponse MapToAdminDetailResponse(Order order)
@@ -482,6 +658,11 @@ public sealed class OrderService(
                     h.ChangedByAdmin != null ? (h.ChangedByAdmin.Username ?? h.ChangedByAdmin.Name) : null,
                     h.Comment,
                     h.CreatedAt))
-                .ToArray());
+                .ToArray(),
+            ReferrerId: order.ReferrerId,
+            ReferrerName: order.Referrer?.Name,
+            ReferralCode: order.Referrer?.ReferralCode,
+            ReferralRewardAmount: order.ReferralRewardAmount,
+            IsReferralRewardPaid: order.IsReferralRewardPaid);
     }
 }

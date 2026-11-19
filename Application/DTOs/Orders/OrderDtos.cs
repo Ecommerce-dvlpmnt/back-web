@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Domain.Enums;
 
 namespace EcommerceBackend.Application.DTOs.Orders;
@@ -62,7 +63,8 @@ public sealed record OrderResponse(
     PaymentStatus PaymentStatus,
     decimal TotalPrice,
     DateTime CreatedAt,
-    IReadOnlyList<OrderItemResponse> Items);
+    IReadOnlyList<OrderItemResponse> Items,
+    Guid? ReferrerId = null);
 
 /// <summary>An order line returned by the API.</summary>
 public sealed record OrderItemResponse(
@@ -127,7 +129,12 @@ public sealed record AdminOrderDetailResponse(
     DateTime CreatedAt,
     DateTime UpdatedAt,
     IReadOnlyList<AdminOrderItemResponse> Items,
-    IReadOnlyList<OrderStatusHistoryDto> StatusHistory);
+    IReadOnlyList<OrderStatusHistoryDto> StatusHistory,
+    Guid? ReferrerId = null,
+    string? ReferrerName = null,
+    string? ReferralCode = null,
+    decimal ReferralRewardAmount = 0m,
+    bool IsReferralRewardPaid = false);
 
 /// <summary>Request to update the admin internal comment for an order.</summary>
 public sealed record UpdateOrderCommentRequest
@@ -154,3 +161,36 @@ public sealed record UpdateOrderStatusRequest
 
     public string? Comment { get; init; }
 }
+
+public sealed record ConfirmOrderPaymentRequest
+{
+    [StringLength(20)]
+    public string? PaymentProvider { get; init; }
+
+    [StringLength(100)]
+    public string? ExternalPaymentId { get; init; }
+
+    public string? Comment { get; init; }
+}
+
+public sealed record PaymentWebhookRequest
+{
+    public Guid? OrderId { get; init; }
+
+    [StringLength(32)]
+    public string? OrderPublicId { get; init; }
+
+    [StringLength(100)]
+    public string? ExternalPaymentId { get; init; }
+
+    [StringLength(20)]
+    public string? PaymentProvider { get; init; }
+
+    [Required]
+    public PaymentStatus PaymentStatus { get; init; } = PaymentStatus.Paid;
+}
+
+public sealed record OrderPaymentConfirmationResponse(
+    OrderResponse Order,
+    ReferralRewardResult? ReferralReward,
+    bool TelegramNotificationSent);

@@ -17,4 +17,19 @@ public interface IReferralService
     Task<ReferralRewardResult?> ProcessPaidOrderAsync(
         Guid orderId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PartnerResponse>> GetAllPartnersAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<PartnerResponse?> GetPartnerByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default);
+
+    Task<PartnerResponse> CreatePartnerAsync(
+        CreatePartnerRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ReferralCodeValidationResponse> ValidateCodeAsync(
+        string? referralCode,
+        CancellationToken cancellationToken = default);
 }

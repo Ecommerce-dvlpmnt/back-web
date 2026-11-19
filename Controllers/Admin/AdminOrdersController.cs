@@ -4,6 +4,7 @@ using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace EcommerceBackend.Controllers.Admin;
 
@@ -77,5 +78,28 @@ public sealed class AdminOrdersController(IOrderService orderService) : Controll
     {
         var order = await orderService.UpdateCommentAsync(id, request.GetComment(), cancellationToken);
         return order is null ? NotFound() : Ok(order);
+    }
+
+    [HttpPost("{id:guid}/confirm-payment")]
+    [ProducesResponseType(typeof(OrderPaymentConfirmationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OrderPaymentConfirmationResponse>> ConfirmPayment(
+        Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ConfirmOrderPaymentRequest? request,
+        CancellationToken cancellationToken)
+    {
+        Guid? adminId = null;
+        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (Guid.TryParse(claim, out var parsed))
+        {
+            adminId = parsed;
+        }
+
+        var result = await orderService.ConfirmPaymentAsync(id, request, adminId, cancellationToken);
+        return Ok(result);
     }
 }
