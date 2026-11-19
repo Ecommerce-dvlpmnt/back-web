@@ -153,6 +153,7 @@ builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IReferralService, ReferralService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();

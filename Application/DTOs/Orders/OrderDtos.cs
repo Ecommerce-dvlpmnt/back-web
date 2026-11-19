@@ -27,6 +27,9 @@ public sealed record CreateOrderRequest
 
     public PaymentMethod PaymentMethod { get; init; } = PaymentMethod.CashOnDelivery;
 
+    [StringLength(32)]
+    public string? ReferralCode { get; init; }
+
     [Required, MinLength(1)]
     public required IReadOnlyList<CreateOrderItemRequest> Items { get; init; }
 }

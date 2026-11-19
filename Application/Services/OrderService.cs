@@ -10,6 +10,7 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class OrderService(
     AppDbContext dbContext,
+    IReferralService referralService,
     ILogger<OrderService>? logger = null) : IOrderService
 {
     public async Task<OrderResponse> CreateAsync(
@@ -85,6 +86,8 @@ public sealed class OrderService(
             CreatedAt = now,
             UpdatedAt = now
         };
+
+        await referralService.AttachReferrerAsync(order, request.ReferralCode, cancellationToken);
 
         foreach (var (productId, quantity) in requestedQuantities)
         {
