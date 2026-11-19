@@ -381,6 +381,12 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("ExternalPaymentId");
 
+                    b.Property<bool>("IsReferralRewardPaid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("IsReferralRewardPaid");
+
                     b.Property<int>("OrderNumber")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -416,6 +422,17 @@ namespace EcommerceBackend.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("PublicId");
+
+                    b.Property<decimal>("ReferralRewardAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("ReferralRewardAmount");
+
+                    b.Property<Guid?>("ReferrerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ReferrerId");
 
                     b.Property<decimal>("TotalPrice")
                         .HasPrecision(10, 2)
@@ -476,6 +493,9 @@ namespace EcommerceBackend.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique()
                         .HasDatabaseName("Orders_PublicId_key");
+
+                    b.HasIndex("ReferrerId")
+                        .HasDatabaseName("IX_Orders_ReferrerId");
 
                     b.ToTable("Orders", (string)null);
                 });
@@ -633,6 +653,63 @@ namespace EcommerceBackend.Migrations
                         .HasDatabaseName("IX_OrderStatusHistory_OrderId");
 
                     b.ToTable("OrderStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.Partner", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<decimal>("CommissionPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasDefaultValue(5.0m)
+                        .HasColumnName("CommissionPercent");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("Name");
+
+                    b.Property<string>("ReferralCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("ReferralCode");
+
+                    b.Property<long>("TelegramUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("TelegramUserId");
+
+                    b.Property<decimal>("TotalEarned")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("TotalEarned");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReferralCode")
+                        .IsUnique()
+                        .HasDatabaseName("Partners_ReferralCode_key");
+
+                    b.HasIndex("TelegramUserId")
+                        .IsUnique()
+                        .HasDatabaseName("Partners_TelegramUserId_key");
+
+                    b.ToTable("Partners", (string)null);
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerDeposit", b =>
@@ -1075,7 +1152,15 @@ namespace EcommerceBackend.Migrations
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("Orders_CampaignId_fkey");
 
+                    b.HasOne("EcommerceBackend.Domain.Entities.Partner", "Referrer")
+                        .WithMany("Orders")
+                        .HasForeignKey("ReferrerId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("Orders_ReferrerId_fkey");
+
                     b.Navigation("Campaign");
+
+                    b.Navigation("Referrer");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.OrderItem", b =>
@@ -1256,6 +1341,11 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("Shipments");
 
                     b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.Partner", b =>
+                {
+                    b.Navigation("Orders");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>
