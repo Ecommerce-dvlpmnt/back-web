@@ -96,3 +96,47 @@ public sealed record BotPartnerOrderDto(
 public sealed record BotPartnerOrdersResponse(
     int TotalCount,
     IReadOnlyList<BotPartnerOrderDto> Items);
+
+public sealed record BotPayoutRequestDto
+{
+    [Range(300, 1000000, ErrorMessage = "Мінімальна сума для виведення становить 300 грн.")]
+    public decimal Amount { get; init; }
+
+    [Required(ErrorMessage = "Номер банківської картки є обов'язковим.")]
+    [RegularExpression(@"^\d{16}$", ErrorMessage = "Номер картки повинен містити рівно 16 цифр.")]
+    public required string CardNumber { get; init; }
+
+    public string? CardHolderName { get; init; }
+}
+
+public sealed record BotPayoutResponse(
+    Guid Id,
+    decimal Amount,
+    string CardNumberMasked,
+    string? CardHolderName,
+    PayoutRequestStatus Status,
+    decimal RemainingAvailableBalance,
+    DateTime CreatedAt);
+
+public sealed record AdminPayoutResponse(
+    Guid Id,
+    Guid PartnerId,
+    long PartnerTelegramUserId,
+    string PartnerName,
+    string PartnerReferralCode,
+    decimal Amount,
+    string CardNumber,
+    string? CardHolderName,
+    PayoutRequestStatus Status,
+    string? AdminComment,
+    DateTime CreatedAt,
+    DateTime? ProcessedAt);
+
+public sealed record UpdatePayoutStatusRequest
+{
+    [Required(ErrorMessage = "Статус виплати є обов'язковим.")]
+    public PayoutRequestStatus Status { get; init; }
+
+    [StringLength(500, ErrorMessage = "Коментар не повинен перевищувати 500 символів.")]
+    public string? AdminComment { get; init; }
+}

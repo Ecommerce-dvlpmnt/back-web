@@ -139,6 +139,40 @@ public sealed class BotReferralsControllerTests
         Assert.Single(orders.Items);
     }
 
+    [Fact]
+    public async Task RequestPayout_ReturnsOk_WhenValid()
+    {
+        var fakeReferralService = new FakeReferralService();
+        var controller = CreateController(fakeReferralService, ValidSecret);
+
+        var request = new BotPayoutRequestDto
+        {
+            Amount = 500m,
+            CardNumber = "4149499912345678",
+            CardHolderName = "Sasha"
+        };
+
+        var result = await controller.RequestPayout(12345L, request, ValidSecret, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var payout = Assert.IsType<BotPayoutResponse>(okResult.Value);
+        Assert.Equal(500m, payout.Amount);
+        Assert.Equal(PayoutRequestStatus.Pending, payout.Status);
+    }
+
+    [Fact]
+    public async Task GetPayouts_ReturnsList()
+    {
+        var fakeReferralService = new FakeReferralService();
+        var controller = CreateController(fakeReferralService, ValidSecret);
+
+        var result = await controller.GetPayouts(12345L, ValidSecret, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var payouts = Assert.IsAssignableFrom<IReadOnlyList<BotPayoutResponse>>(okResult.Value);
+        Assert.NotNull(payouts);
+    }
+
     private static BotReferralsController CreateController(IReferralService referralService, string secret)
     {
         var config = new ConfigurationBuilder()
@@ -195,5 +229,17 @@ public sealed class BotReferralsControllerTests
 
         public Task<BotPartnerOrdersResponse?> GetBotPartnerOrdersAsync(long telegramUserId, int limit = 20, int offset = 0, CancellationToken cancellationToken = default) =>
             Task.FromResult(OrdersToReturn);
+
+        public Task<BotPayoutResponse> RequestPayoutAsync(long telegramUserId, BotPayoutRequestDto request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BotPayoutResponse(Guid.NewGuid(), request.Amount, "**** 1234", request.CardHolderName, PayoutRequestStatus.Pending, 100m, DateTime.UtcNow));
+
+        public Task<IReadOnlyList<BotPayoutResponse>> GetBotPartnerPayoutsAsync(long telegramUserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotPayoutResponse>>(Array.Empty<BotPayoutResponse>());
+
+        public Task<IReadOnlyList<AdminPayoutResponse>> GetAllPayoutRequestsAsync(PayoutRequestStatus? status = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AdminPayoutResponse>>(Array.Empty<AdminPayoutResponse>());
+
+        public Task<AdminPayoutResponse> ProcessPayoutRequestAsync(Guid payoutId, UpdatePayoutStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AdminPayoutResponse(payoutId, Guid.NewGuid(), 123L, "Partner", "REF1", 300m, "4149499912345678", null, request.Status, request.AdminComment, DateTime.UtcNow, DateTime.UtcNow));
     }
 }

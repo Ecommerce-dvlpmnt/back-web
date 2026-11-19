@@ -50,3 +50,10 @@ public enum ReferralRewardStatus
     Paid,
     Cancelled
 }
+
+public enum PayoutRequestStatus
+{
+    Pending,
+    Completed,
+    Rejected
+}

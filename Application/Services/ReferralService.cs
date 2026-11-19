@@ -10,6 +10,7 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class ReferralService(
     AppDbContext dbContext,
+    ITelegramBotClient? telegramBotClient = null,
     ILogger<ReferralService>? logger = null) : IReferralService
 {
     public async Task<Partner?> FindPartnerByCodeAsync(
@@ -559,6 +560,265 @@ public sealed class ReferralService(
             .ToListAsync(cancellationToken);
 
         return new BotPartnerOrdersResponse(totalCount, items);
+    }
+
+    public async Task<BotPayoutResponse> RequestPayoutAsync(
+        long telegramUserId,
+        BotPayoutRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.Amount < 300m)
+        {
+            throw new ArgumentException("Мінімальна сума для виведення становить 300 грн.", nameof(request));
+        }
+
+        var cleanCard = new string(request.CardNumber.Where(char.IsDigit).ToArray());
+        if (cleanCard.Length != 16)
+        {
+            throw new ArgumentException("Номер банківської картки повинен містити 16 цифр.", nameof(request));
+        }
+
+        var ownsTransaction = dbContext.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        try
+        {
+            var partner = await dbContext.Partners
+                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"TelegramUserId\" = {telegramUserId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (partner is null)
+            {
+                throw new KeyNotFoundException($"Партнера з Telegram ID '{telegramUserId}' не знайдено.");
+            }
+
+            if (partner.TotalEarned < request.Amount)
+            {
+                throw new InvalidOperationException(
+                    $"Недостатньо коштів на балансі. Доступно для виведення: {partner.TotalEarned:0.00} грн.");
+            }
+
+            partner.TotalEarned -= request.Amount;
+
+            var payout = new PartnerPayoutRequest
+            {
+                Id = Guid.NewGuid(),
+                PartnerId = partner.Id,
+                Amount = request.Amount,
+                CardNumber = cleanCard,
+                CardHolderName = request.CardHolderName?.Trim(),
+                Status = PayoutRequestStatus.Pending,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            dbContext.PartnerPayoutRequests.Add(payout);
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            logger?.LogInformation(
+                "Партнер {PartnerId} створив заявку на виведення {Amount} грн на картку {Card}.",
+                partner.Id,
+                payout.Amount,
+                MaskCardNumber(cleanCard));
+
+            return new BotPayoutResponse(
+                payout.Id,
+                payout.Amount,
+                MaskCardNumber(cleanCard),
+                payout.CardHolderName,
+                payout.Status,
+                partner.TotalEarned,
+                payout.CreatedAt);
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<BotPayoutResponse>> GetBotPartnerPayoutsAsync(
+        long telegramUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var partner = await dbContext.Partners
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TelegramUserId == telegramUserId, cancellationToken);
+
+        if (partner is null)
+        {
+            return Array.Empty<BotPayoutResponse>();
+        }
+
+        var payouts = await dbContext.PartnerPayoutRequests
+            .AsNoTracking()
+            .Where(p => p.PartnerId == partner.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return payouts
+            .Select(p => new BotPayoutResponse(
+                p.Id,
+                p.Amount,
+                MaskCardNumber(p.CardNumber),
+                p.CardHolderName,
+                p.Status,
+                partner.TotalEarned,
+                p.CreatedAt))
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<AdminPayoutResponse>> GetAllPayoutRequestsAsync(
+        PayoutRequestStatus? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.PartnerPayoutRequests
+            .AsNoTracking()
+            .Include(p => p.Partner)
+            .AsQueryable();
+
+        if (status.HasValue)
+        {
+            query = query.Where(p => p.Status == status.Value);
+        }
+
+        var list = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return list
+            .Select(p => new AdminPayoutResponse(
+                p.Id,
+                p.PartnerId,
+                p.Partner?.TelegramUserId ?? 0L,
+                p.Partner?.Name ?? string.Empty,
+                p.Partner?.ReferralCode ?? string.Empty,
+                p.Amount,
+                p.CardNumber,
+                p.CardHolderName,
+                p.Status,
+                p.AdminComment,
+                p.CreatedAt,
+                p.ProcessedAt))
+            .ToArray();
+    }
+
+    public async Task<AdminPayoutResponse> ProcessPayoutRequestAsync(
+        Guid payoutId,
+        UpdatePayoutStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var ownsTransaction = dbContext.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        try
+        {
+            var payout = await dbContext.PartnerPayoutRequests
+                .FromSqlInterpolated($"SELECT * FROM \"PartnerPayoutRequests\" WHERE \"Id\" = {payoutId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (payout is null)
+            {
+                throw new KeyNotFoundException($"Заявку на виплату з ID '{payoutId}' не знайдено.");
+            }
+
+            if (payout.Status != PayoutRequestStatus.Pending)
+            {
+                throw new InvalidOperationException("Ця заявка на виплату вже була оброблена раніше.");
+            }
+
+            var partnerId = payout.PartnerId;
+            var partner = await dbContext.Partners
+                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"Id\" = {partnerId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (partner is null)
+            {
+                throw new KeyNotFoundException($"Партнера з ID '{partnerId}' не знайдено.");
+            }
+
+            var now = DateTime.UtcNow;
+            payout.Status = request.Status;
+            payout.AdminComment = request.AdminComment?.Trim();
+            payout.ProcessedAt = now;
+
+            if (request.Status == PayoutRequestStatus.Rejected)
+            {
+                partner.TotalEarned += payout.Amount;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            if (telegramBotClient is not null)
+            {
+                if (request.Status == PayoutRequestStatus.Completed)
+                {
+                    _ = telegramBotClient.SendPayoutCompletedNotificationAsync(
+                        partner.TelegramUserId,
+                        payout.Amount,
+                        MaskCardNumber(payout.CardNumber),
+                        cancellationToken);
+                }
+                else if (request.Status == PayoutRequestStatus.Rejected)
+                {
+                    _ = telegramBotClient.SendPayoutRejectedNotificationAsync(
+                        partner.TelegramUserId,
+                        payout.Amount,
+                        request.AdminComment,
+                        cancellationToken);
+                }
+            }
+
+            return new AdminPayoutResponse(
+                payout.Id,
+                partner.Id,
+                partner.TelegramUserId,
+                partner.Name,
+                partner.ReferralCode,
+                payout.Amount,
+                payout.CardNumber,
+                payout.CardHolderName,
+                payout.Status,
+                payout.AdminComment,
+                payout.CreatedAt,
+                payout.ProcessedAt);
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
+    }
+
+    private static string MaskCardNumber(string card)
+    {
+        if (string.IsNullOrWhiteSpace(card) || card.Length < 16)
+        {
+            return card;
+        }
+
+        return $"{card[..4]} **** **** {card[^4..]}";
     }
 
     private async Task<string> GenerateUniqueReferralCodeAsync(CancellationToken cancellationToken)

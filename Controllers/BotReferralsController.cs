@@ -89,6 +89,44 @@ public sealed class BotReferralsController(
         return orders is null ? NotFound() : Ok(orders);
     }
 
+    [HttpPost("{telegramUserId:long}/withdraw")]
+    [ProducesResponseType(typeof(BotPayoutResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BotPayoutResponse>> RequestPayout(
+        long telegramUserId,
+        [FromBody] BotPayoutRequestDto request,
+        [FromHeader(Name = "X-Bot-Secret")] string? botSecret,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAuthorized(botSecret))
+        {
+            return Unauthorized();
+        }
+
+        var payout = await referralService.RequestPayoutAsync(telegramUserId, request, cancellationToken);
+        return Ok(payout);
+    }
+
+    [HttpGet("{telegramUserId:long}/payouts")]
+    [ProducesResponseType(typeof(IReadOnlyList<BotPayoutResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<BotPayoutResponse>>> GetPayouts(
+        long telegramUserId,
+        [FromHeader(Name = "X-Bot-Secret")] string? botSecret,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAuthorized(botSecret))
+        {
+            return Unauthorized();
+        }
+
+        var payouts = await referralService.GetBotPartnerPayoutsAsync(telegramUserId, cancellationToken);
+        return Ok(payouts);
+    }
+
     private bool IsAuthorized(string? providedSecret)
     {
         var expectedSecret = configuration["Telegram:BotSecret"]

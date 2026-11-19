@@ -20,4 +20,16 @@ public interface ITelegramBotClient
         ReferralRewardResult reward,
         string reason,
         CancellationToken cancellationToken = default);
+
+    Task<bool> SendPayoutCompletedNotificationAsync(
+        long telegramUserId,
+        decimal amount,
+        string cardNumberMasked,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> SendPayoutRejectedNotificationAsync(
+        long telegramUserId,
+        decimal amount,
+        string? reason,
+        CancellationToken cancellationToken = default);
 }

@@ -11,4 +11,5 @@ public class Partner
     public DateTime CreatedAt { get; set; }
 
     public ICollection<Order> Orders { get; set; } = new List<Order>();
+    public ICollection<PartnerPayoutRequest> PayoutRequests { get; set; } = new List<PartnerPayoutRequest>();
 }

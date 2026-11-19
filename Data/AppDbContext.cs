@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<AdSpend> AdSpends => Set<AdSpend>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<Partner> Partners => Set<Partner>();
+    public DbSet<PartnerPayoutRequest> PartnerPayoutRequests => Set<PartnerPayoutRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,32 @@ public class AppDbContext : DbContext
         ConfigureAdSpends(modelBuilder);
         ConfigureReviews(modelBuilder);
         ConfigurePartners(modelBuilder);
+        ConfigurePartnerPayoutRequests(modelBuilder);
+    }
+
+    private static void ConfigurePartnerPayoutRequests(ModelBuilder b)
+    {
+        var e = b.Entity<PartnerPayoutRequest>();
+        e.ToTable("PartnerPayoutRequests");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.PartnerId).HasColumnName("PartnerId").IsRequired();
+        e.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(12, 2).IsRequired();
+        e.Property(x => x.CardNumber).HasColumnName("CardNumber").HasMaxLength(30).IsRequired();
+        e.Property(x => x.CardHolderName).HasColumnName("CardHolderName").HasMaxLength(150);
+        e.Property(x => x.Status).HasColumnName("Status").HasMaxLength(20).HasConversion<string>().HasDefaultValue(PayoutRequestStatus.Pending);
+        e.Property(x => x.AdminComment).HasColumnName("AdminComment").HasMaxLength(500);
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+        e.Property(x => x.ProcessedAt).HasColumnName("ProcessedAt").HasColumnType("timestamptz");
+
+        e.HasIndex(x => x.PartnerId).HasDatabaseName("IX_PartnerPayoutRequests_PartnerId");
+        e.HasIndex(x => x.Status).HasDatabaseName("IX_PartnerPayoutRequests_Status");
+
+        e.HasOne(x => x.Partner)
+            .WithMany(x => x.PayoutRequests)
+            .HasForeignKey(x => x.PartnerId)
+            .HasConstraintName("PartnerPayoutRequests_PartnerId_fkey")
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     private static void ConfigurePartners(ModelBuilder b)

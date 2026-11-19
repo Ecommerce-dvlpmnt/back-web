@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Domain.Entities;
+using EcommerceBackend.Domain.Enums;
 
 namespace EcommerceBackend.Application.Interfaces;
 
@@ -57,5 +58,23 @@ public interface IReferralService
         long telegramUserId,
         int limit = 20,
         int offset = 0,
+        CancellationToken cancellationToken = default);
+
+    Task<BotPayoutResponse> RequestPayoutAsync(
+        long telegramUserId,
+        BotPayoutRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<BotPayoutResponse>> GetBotPartnerPayoutsAsync(
+        long telegramUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AdminPayoutResponse>> GetAllPayoutRequestsAsync(
+        PayoutRequestStatus? status = null,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminPayoutResponse> ProcessPayoutRequestAsync(
+        Guid payoutId,
+        UpdatePayoutStatusRequest request,
         CancellationToken cancellationToken = default);
 }

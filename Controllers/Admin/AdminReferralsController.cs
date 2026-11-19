@@ -49,4 +49,32 @@ public sealed class AdminReferralsController(IReferralService referralService) :
         var created = await referralService.CreatePartnerAsync(request, cancellationToken);
         return CreatedAtAction(nameof(GetPartnerById), new { id = created.Id }, created);
     }
+
+    [HttpGet("payouts")]
+    [ProducesResponseType(typeof(IReadOnlyList<AdminPayoutResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<AdminPayoutResponse>>> GetAllPayouts(
+        [FromQuery] EcommerceBackend.Domain.Enums.PayoutRequestStatus? status,
+        CancellationToken cancellationToken)
+    {
+        var payouts = await referralService.GetAllPayoutRequestsAsync(status, cancellationToken);
+        return Ok(payouts);
+    }
+
+    [HttpPatch("payouts/{id:guid}/status")]
+    [ProducesResponseType(typeof(AdminPayoutResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AdminPayoutResponse>> UpdatePayoutStatus(
+        Guid id,
+        [FromBody] UpdatePayoutStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var updated = await referralService.ProcessPayoutRequestAsync(id, request, cancellationToken);
+        return Ok(updated);
+    }
 }

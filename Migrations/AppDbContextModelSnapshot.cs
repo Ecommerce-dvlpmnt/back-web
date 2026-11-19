@@ -776,6 +776,68 @@ namespace EcommerceBackend.Migrations
                     b.ToTable("PartnerDeposits", (string)null);
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerPayoutRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("AdminComment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("AdminComment");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("Amount");
+
+                    b.Property<string>("CardHolderName")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("CardHolderName");
+
+                    b.Property<string>("CardNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("CardNumber");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("PartnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("PartnerId");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("ProcessedAt");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("Status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartnerId")
+                        .HasDatabaseName("IX_PartnerPayoutRequests_PartnerId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_PartnerPayoutRequests_Status");
+
+                    b.ToTable("PartnerPayoutRequests", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1248,6 +1310,18 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("Admin");
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerPayoutRequest", b =>
+                {
+                    b.HasOne("EcommerceBackend.Domain.Entities.Partner", "Partner")
+                        .WithMany("PayoutRequests")
+                        .HasForeignKey("PartnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("PartnerPayoutRequests_PartnerId_fkey");
+
+                    b.Navigation("Partner");
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>
                 {
                     b.HasOne("EcommerceBackend.Domain.Entities.Category", "Category")
@@ -1357,6 +1431,8 @@ namespace EcommerceBackend.Migrations
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Partner", b =>
                 {
                     b.Navigation("Orders");
+
+                    b.Navigation("PayoutRequests");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>

@@ -82,6 +82,37 @@ public sealed class TelegramBotClient(
         return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
     }
 
+    public async Task<bool> SendPayoutCompletedNotificationAsync(
+        long telegramUserId,
+        decimal amount,
+        string cardNumberMasked,
+        CancellationToken cancellationToken = default)
+    {
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "💸 Виплату на суму {0:0.00} грн успішно надіслано на вашу картку {1}!\nДякуємо за співпрацю!",
+            amount,
+            cardNumberMasked);
+
+        return await SendMessageAsync(telegramUserId, Guid.Empty, text, cancellationToken);
+    }
+
+    public async Task<bool> SendPayoutRejectedNotificationAsync(
+        long telegramUserId,
+        decimal amount,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        var reasonText = string.IsNullOrWhiteSpace(reason) ? "не вказано" : reason.Trim();
+        var text = string.Format(
+            CultureInfo.InvariantCulture,
+            "⚠️ Заявку на виведення {0:0.00} грн відхилено (причина: {1}).\nКошти повернуто на ваш доступний баланс.",
+            amount,
+            reasonText);
+
+        return await SendMessageAsync(telegramUserId, Guid.Empty, text, cancellationToken);
+    }
+
     private async Task<bool> SendMessageAsync(
         long telegramUserId,
         Guid partnerId,
