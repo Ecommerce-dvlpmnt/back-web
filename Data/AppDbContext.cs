@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<PartnerDeposit> PartnerDeposits => Set<PartnerDeposit>();
     public DbSet<AdSpend> AdSpends => Set<AdSpend>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<Partner> Partners => Set<Partner>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,24 @@ public class AppDbContext : DbContext
         ConfigurePartnerDeposits(modelBuilder);
         ConfigureAdSpends(modelBuilder);
         ConfigureReviews(modelBuilder);
+        ConfigurePartners(modelBuilder);
+    }
+
+    private static void ConfigurePartners(ModelBuilder b)
+    {
+        var e = b.Entity<Partner>();
+        e.ToTable("Partners");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.TelegramUserId).HasColumnName("TelegramUserId").IsRequired();
+        e.Property(x => x.Name).HasColumnName("Name").HasMaxLength(100).IsRequired();
+        e.Property(x => x.ReferralCode).HasColumnName("ReferralCode").HasMaxLength(32).IsRequired();
+        e.Property(x => x.CommissionPercent).HasColumnName("CommissionPercent").HasPrecision(5, 2).HasDefaultValue(5.0m);
+        e.Property(x => x.TotalEarned).HasColumnName("TotalEarned").HasPrecision(12, 2).HasDefaultValue(0m);
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasIndex(x => x.ReferralCode).IsUnique().HasDatabaseName("Partners_ReferralCode_key");
+        e.HasIndex(x => x.TelegramUserId).IsUnique().HasDatabaseName("Partners_TelegramUserId_key");
     }
 
     private static void ConfigureSuppliers(ModelBuilder b)
@@ -281,10 +300,14 @@ public class AppDbContext : DbContext
         e.Property(x => x.UtmMedium).HasColumnName("UtmMedium").HasMaxLength(100);
         e.Property(x => x.UtmCampaign).HasColumnName("UtmCampaign").HasMaxLength(100);
         e.Property(x => x.CampaignId).HasColumnName("CampaignId");
+        e.Property(x => x.ReferrerId).HasColumnName("ReferrerId");
+        e.Property(x => x.ReferralRewardAmount).HasColumnName("ReferralRewardAmount").HasPrecision(10, 2).HasDefaultValue(0m);
+        e.Property(x => x.IsReferralRewardPaid).HasColumnName("IsReferralRewardPaid").HasDefaultValue(false);
         e.Property(x => x.AdminComment).HasColumnName("AdminComment");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
 
+        e.HasIndex(x => x.ReferrerId).HasDatabaseName("IX_Orders_ReferrerId");
         e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("Orders_PublicId_key");
         e.HasIndex(x => x.OrderNumber).IsUnique().HasDatabaseName("Orders_OrderNumber_key");
         e.HasIndex(x => x.CustomerPhone).HasDatabaseName("IX_Orders_CustomerPhone");
@@ -302,6 +325,12 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Orders)
             .HasForeignKey(x => x.CampaignId)
             .HasConstraintName("Orders_CampaignId_fkey")
+            .OnDelete(DeleteBehavior.SetNull);
+
+        e.HasOne(x => x.Referrer)
+            .WithMany(x => x.Orders)
+            .HasForeignKey(x => x.ReferrerId)
+            .HasConstraintName("Orders_ReferrerId_fkey")
             .OnDelete(DeleteBehavior.SetNull);
     }
 

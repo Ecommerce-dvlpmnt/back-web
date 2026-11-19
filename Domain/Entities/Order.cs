@@ -28,11 +28,15 @@ public class Order : ITrackableEntity
     public string? UtmMedium { get; set; }
     public string? UtmCampaign { get; set; }
     public Guid? CampaignId { get; set; }
+    public Guid? ReferrerId { get; set; }
+    public decimal ReferralRewardAmount { get; set; }
+    public bool IsReferralRewardPaid { get; set; }
     public string? AdminComment { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
     public Campaign? Campaign { get; set; }
+    public Partner? Referrer { get; set; }
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderShipment> Shipments { get; set; } = new List<OrderShipment>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
