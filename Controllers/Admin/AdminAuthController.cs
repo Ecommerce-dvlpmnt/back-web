@@ -4,6 +4,7 @@ using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EcommerceBackend.Controllers.Admin;
 
@@ -14,9 +15,11 @@ public sealed class AdminAuthController(IAdminAuthService adminAuthService) : Co
 {
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-limit")]
     [ProducesResponseType(typeof(AdminLoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AdminLoginResponse>> Login(
         [FromBody] AdminLoginRequest request,
         CancellationToken ct)

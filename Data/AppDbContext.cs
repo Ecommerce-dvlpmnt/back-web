@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<Partner> Partners => Set<Partner>();
     public DbSet<PartnerPayoutRequest> PartnerPayoutRequests => Set<PartnerPayoutRequest>();
+    public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +48,7 @@ public class AppDbContext : DbContext
         ConfigureReviews(modelBuilder);
         ConfigurePartners(modelBuilder);
         ConfigurePartnerPayoutRequests(modelBuilder);
+        ConfigureAdminAuditLogs(modelBuilder);
     }
 
     private static void ConfigurePartnerPayoutRequests(ModelBuilder b)
@@ -574,6 +576,33 @@ public class AppDbContext : DbContext
         e.HasIndex(x => new { x.Status, x.CreatedAt })
             .IsDescending(false, true)
             .HasDatabaseName("IX_Reviews_Status_CreatedAt");
+    }
+
+    private static void ConfigureAdminAuditLogs(ModelBuilder b)
+    {
+        var e = b.Entity<AdminAuditLog>();
+        e.ToTable("AdminAuditLogs");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.AdminUsername).HasColumnName("AdminUsername").HasMaxLength(30).IsRequired();
+        e.Property(x => x.Action).HasColumnName("Action").HasMaxLength(50).IsRequired();
+        e.Property(x => x.EntityType).HasColumnName("EntityType").HasMaxLength(50).IsRequired();
+        e.Property(x => x.EntityId).HasColumnName("EntityId").HasMaxLength(100).IsRequired();
+        e.Property(x => x.Details).HasColumnName("Details").HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb").IsRequired();
+        e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasIndex(x => x.CreatedAt)
+            .IsDescending()
+            .HasDatabaseName("IX_AdminAuditLogs_CreatedAt");
+        e.HasIndex(x => new { x.AdminUsername, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_AdminAuditLogs_AdminUsername_CreatedAt");
+        e.HasIndex(x => new { x.EntityType, x.EntityId, x.CreatedAt })
+            .IsDescending(false, false, true)
+            .HasDatabaseName("IX_AdminAuditLogs_Entity_CreatedAt");
+        e.HasIndex(x => new { x.Action, x.CreatedAt })
+            .IsDescending(false, true)
+            .HasDatabaseName("IX_AdminAuditLogs_Action_CreatedAt");
     }
 
     public override int SaveChanges()

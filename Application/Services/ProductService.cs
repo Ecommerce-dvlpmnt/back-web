@@ -8,7 +8,8 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class ProductService(
     IProductRepository productRepository,
-    IImageStorageService imageStorageService) : IProductService
+    IImageStorageService imageStorageService,
+    IAuditLogService auditLogService) : IProductService
 {
     public async Task<PagedResult<ProductDto>> GetAllAsync(
         ProductQueryParameters query,
@@ -78,6 +79,9 @@ public sealed class ProductService(
         if (product is null)
             return null;
 
+        var oldPrice = product.Price;
+        var oldStock = product.Stock;
+
         product.CategoryId = request.CategoryId;
         product.SupplierId = request.SupplierId;
         product.Sku = request.Sku;
@@ -95,6 +99,29 @@ public sealed class ProductService(
         product.WeightKg = request.WeightKg;
         product.IsActive = request.IsActive;
         product.Images = MapImages(request.Images);
+
+        if (oldPrice != product.Price || oldStock != product.Stock)
+        {
+            var changedFields = new List<string>(2);
+            if (oldPrice != product.Price)
+                changedFields.Add("price");
+            if (oldStock != product.Stock)
+                changedFields.Add("stock");
+
+            await auditLogService.LogAsync(
+                AuditLogActions.ProductUpdated,
+                AuditLogEntityTypes.Product,
+                product.Id.ToString(),
+                new
+                {
+                    sku = product.Sku,
+                    name = product.Name,
+                    before = new { price = oldPrice, stock = oldStock },
+                    after = new { price = product.Price, stock = product.Stock },
+                    changedFields = changedFields.ToArray()
+                },
+                cancellationToken);
+        }
 
         var updated = await productRepository.UpdateAsync(product, cancellationToken);
         return updated is null ? null : MapToDto(updated);
@@ -143,11 +170,60 @@ public sealed class ProductService(
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
         productRepository.DeleteAsync(id, cancellationToken);
 
-    public Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
-        productRepository.SoftDeleteAsync(id, cancellationToken);
+    public async Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return false;
 
-    public Task<bool> UpdateStockAsync(Guid id, int stock, CancellationToken cancellationToken = default) =>
-        productRepository.UpdateStockAsync(id, stock, cancellationToken);
+        if (product.IsActive)
+        {
+            await auditLogService.LogAsync(
+                AuditLogActions.ProductDeactivated,
+                AuditLogEntityTypes.Product,
+                product.Id.ToString(),
+                new
+                {
+                    sku = product.Sku,
+                    name = product.Name,
+                    softDelete = true,
+                    before = new { isActive = true },
+                    after = new { isActive = false }
+                },
+                cancellationToken);
+        }
+
+        return await productRepository.SoftDeleteAsync(id, cancellationToken);
+    }
+
+    public async Task<bool> UpdateStockAsync(
+        Guid id,
+        int stock,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return false;
+
+        if (product.Stock != stock)
+        {
+            await auditLogService.LogAsync(
+                AuditLogActions.ProductStockUpdated,
+                AuditLogEntityTypes.Product,
+                product.Id.ToString(),
+                new
+                {
+                    sku = product.Sku,
+                    name = product.Name,
+                    before = new { stock = product.Stock },
+                    after = new { stock },
+                    changedFields = new[] { "stock" }
+                },
+                cancellationToken);
+        }
+
+        return await productRepository.UpdateStockAsync(id, stock, cancellationToken);
+    }
 
     public Task<bool> ExistsBySkuOrSlugAsync(
         string sku,

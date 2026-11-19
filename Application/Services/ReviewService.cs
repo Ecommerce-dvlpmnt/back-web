@@ -7,7 +7,8 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class ReviewService(
     IReviewRepository reviewRepository,
-    IProductRepository productRepository) : IReviewService
+    IProductRepository productRepository,
+    IAuditLogService auditLogService) : IReviewService
 {
     public async Task<ReviewDto> CreateReviewAsync(
         CreateReviewDto request,
@@ -111,8 +112,27 @@ public sealed class ReviewService(
         if (review is null)
             return null;
 
+        var oldStatus = review.Status;
+        var oldAdminComment = review.AdminComment;
+
         review.Status = request.Status;
         review.AdminComment = string.IsNullOrWhiteSpace(request.AdminComment) ? null : request.AdminComment.Trim();
+
+        if (oldStatus != review.Status)
+        {
+            await auditLogService.LogAsync(
+                AuditLogActions.ReviewStatusChanged,
+                AuditLogEntityTypes.Review,
+                review.Id.ToString(),
+                new
+                {
+                    productId = review.ProductId,
+                    before = new { status = oldStatus.ToString(), adminComment = oldAdminComment },
+                    after = new { status = review.Status.ToString(), adminComment = review.AdminComment },
+                    changedFields = new[] { "status" }
+                },
+                cancellationToken);
+        }
 
         var updated = await reviewRepository.UpdateAsync(review, cancellationToken);
         return updated is null ? null : MapToDto(updated, updated.Product?.Name, updated.Category?.Name);
