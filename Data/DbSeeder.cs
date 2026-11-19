@@ -80,12 +80,12 @@ public static class DbSeeder
             await context.SaveChangesAsync(cancellationToken);
         }
 
-        if (!await context.Suppliers.AnyAsync(s => s.Name == "Ёлочка-Трейд", cancellationToken))
+        if (!await context.Suppliers.AnyAsync(s => s.Name == "Ялинка-Трейд" || s.Name == "Ёлочка-Трейд", cancellationToken))
         {
             context.Suppliers.Add(new Supplier
             {
                 Id = Guid.NewGuid(),
-                Name = "Ёлочка-Трейд",
+                Name = "Ялинка-Трейд",
                 Contact = "+380501234567",
                 City = "Харків",
                 Notes = "Постачальник гірлянд, іграшок та декору",

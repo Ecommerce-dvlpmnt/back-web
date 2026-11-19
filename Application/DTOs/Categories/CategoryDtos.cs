@@ -24,7 +24,7 @@ public class CreateCategoryDto
 
     [Required]
     [StringLength(100)]
-    [RegularExpression("^[a-z0-9]+(?:-[a-z0-9]+)*$", ErrorMessage = "Slug must be lowercase letters, digits and dashes.")]
+    [RegularExpression("^[a-z0-9]+(?:-[a-z0-9]+)*$", ErrorMessage = "Slug повинен містити лише малі латинські літери, цифри та дефіси.")]
     public string Slug { get; set; } = string.Empty;
 
     public Guid? ParentId { get; set; }

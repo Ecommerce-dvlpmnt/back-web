@@ -10,7 +10,7 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class ProductsController(IProductService productService) : ControllerBase
 {
-    /// <summary>Каталог активных товаров для витрины магазина с пагинацией, фильтрацией и поиском.</summary>
+    /// <summary>Каталог активних товарів для вітрини магазину з пагінацією, фільтрацією та пошуком.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -22,7 +22,7 @@ public sealed class ProductsController(IProductService productService) : Control
         return Ok(await productService.GetAllAsync(query, cancellationToken));
     }
 
-    /// <summary>Карточка товара по ID для витрины.</summary>
+    /// <summary>Картка товару за ID для вітрини.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -32,7 +32,7 @@ public sealed class ProductsController(IProductService productService) : Control
         return product is null ? NotFound() : Ok(product);
     }
 
-    /// <summary>Карточка товара по уникальному слагу (URL) для витрины.</summary>
+    /// <summary>Картка товару за унікальним слагом (URL) для вітрини.</summary>
     [HttpGet("by-slug/{slug}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

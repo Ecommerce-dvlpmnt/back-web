@@ -2,7 +2,7 @@ namespace EcommerceBackend.Application.Exceptions;
 
 public sealed class InsufficientStockException(
     IReadOnlyList<InsufficientStockItem> items)
-    : Exception("One or more products do not have enough stock.")
+    : Exception("Одного або кількох товарів недостатньо на складі.")
 {
     public IReadOnlyList<InsufficientStockItem> Items { get; } = items;
 }

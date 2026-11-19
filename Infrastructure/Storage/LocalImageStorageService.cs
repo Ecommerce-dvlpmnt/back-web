@@ -18,17 +18,17 @@ public sealed class LocalImageStorageService(IWebHostEnvironment environment) : 
         ArgumentNullException.ThrowIfNull(file);
 
         if (file.Length is <= 0 or > MaxFileSize)
-            throw new ArgumentException("Image size must be between 1 byte and 5 MB.", nameof(file));
+            throw new ArgumentException("Розмір зображення повинен бути від 1 байта до 5 МБ.", nameof(file));
 
         var extension = Path.GetExtension(file.FileName);
         if (!AllowedExtensions.Contains(extension))
-            throw new ArgumentException("Only .jpg, .jpeg, .png, and .webp images are allowed.", nameof(file));
+            throw new ArgumentException("Дозволені лише зображення форматів .jpg, .jpeg, .png та .webp.", nameof(file));
 
         if (string.IsNullOrWhiteSpace(folderName) ||
             folderName is "." or ".." ||
             folderName.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
         {
-            throw new ArgumentException("Folder name must be a single safe path segment.", nameof(folderName));
+            throw new ArgumentException("Назва папки повинна бути безпечним ім'ям шляху.", nameof(folderName));
         }
 
         var webRootPath = environment.WebRootPath;
@@ -45,7 +45,7 @@ public sealed class LocalImageStorageService(IWebHostEnvironment environment) : 
         await using var input = file.OpenReadStream();
         var headerLength = await ReadHeaderAsync(input, header, cancellationToken);
         if (!HasValidSignature(header.AsSpan(0, headerLength), extension))
-            throw new ArgumentException("File contents do not match the image extension.", nameof(file));
+            throw new ArgumentException("Вміст файлу не відповідає розширенню зображення.", nameof(file));
 
         var uploadCompleted = false;
         try

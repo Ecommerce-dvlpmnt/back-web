@@ -22,9 +22,9 @@ public static class DatabaseConnectionHelper
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             throw new InvalidOperationException(
-                "Строка подключения к базе данных не найдена. " +
-                "Укажите 'ConnectionStrings:Default' в appsettings или задайте переменную окружения " +
-                "'ConnectionStrings__Default' либо 'DATABASE_URL'.");
+                "Рядок підключення до бази даних не знайдено. " +
+                "Вкажіть 'ConnectionStrings:Default' в appsettings або задайте змінну оточення " +
+                "'ConnectionStrings__Default' або 'DATABASE_URL'.");
         }
 
         // Если передан URI вида postgres://user:password@host:port/database, преобразуем в Npgsql-формат

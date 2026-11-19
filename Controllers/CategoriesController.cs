@@ -10,7 +10,7 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class CategoriesController(ICategoryService categoryService) : ControllerBase
 {
-    /// <summary>Получить список активных категорий для витрины каталога.</summary>
+    /// <summary>Отримати список активних категорій для вітрини каталогу.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -21,7 +21,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         return Ok(await categoryService.GetAllAsync(onlyActive ?? true, cancellationToken));
     }
 
-    /// <summary>Получить категорию по ID.</summary>
+    /// <summary>Отримати категорію за ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -31,7 +31,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         return category is null ? NotFound() : Ok(category);
     }
 
-    /// <summary>Получить категорию по уникальному слагу (URL).</summary>
+    /// <summary>Отримати категорію за унікальним слагом (URL).</summary>
     [HttpGet("by-slug/{slug}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

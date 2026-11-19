@@ -107,7 +107,7 @@ public sealed class ProductService(
         CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(productId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+            ?? throw new KeyNotFoundException($"Товар з ID '{productId}' не знайдено.");
 
         var imageUrl = await imageStorageService.UploadImageAsync(file, "products", cancellationToken);
         ProductImage? image = null;
@@ -135,7 +135,7 @@ public sealed class ProductService(
             mainImageUrl,
             image,
             cancellationToken)
-            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+            ?? throw new KeyNotFoundException($"Товар з ID '{productId}' не знайдено.");
 
         return MapToDto(updatedProduct);
     }
@@ -163,7 +163,7 @@ public sealed class ProductService(
         CancellationToken cancellationToken)
     {
         if (await ExistsBySkuOrSlugAsync(sku, slug, excludeId, cancellationToken))
-            throw new InvalidOperationException("A product with this SKU or slug already exists.");
+            throw new InvalidOperationException("Товар з таким артикулом (SKU) або slug вже існує.");
     }
 
     private static string NormalizeAttributes(string? attributes)
@@ -178,7 +178,7 @@ public sealed class ProductService(
         }
         catch (JsonException exception)
         {
-            throw new ArgumentException("Attributes must contain valid JSON.", nameof(attributes), exception);
+            throw new ArgumentException("Атрибути повинні містити валідний JSON.", nameof(attributes), exception);
         }
     }
 

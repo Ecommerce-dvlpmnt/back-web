@@ -11,9 +11,9 @@ namespace EcommerceBackend.Controllers;
 public sealed class ReviewsController(IReviewService reviewService) : ControllerBase
 {
     /// <summary>
-    /// Оставить отзыв о товаре (публичный эндпоинт, регистрация не требуется).
-    /// Новый отзыв автоматически получает статус Pending и отправляется на модерацию администратору.
-    /// Защищен от спам-ботов скрытым полем Honeypot.
+    /// Залишити відгук про товар (публічний ендпоінт, реєстрація не потрібна).
+    /// Новий відгук автоматично отримує статус Pending і надсилається на модерацію адміністратору.
+    /// Захищений від спам-ботів прихованим полем Honeypot.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(ReviewDto), StatusCodes.Status201Created)]
@@ -31,7 +31,7 @@ public sealed class ReviewsController(IReviewService reviewService) : Controller
     }
 
     /// <summary>
-    /// Получить все одобренные (Approved) отзывы и сводную статистику (средний рейтинг, распределение звезд) по товару.
+    /// Отримати всі схвалені (Approved) відгуки та зведену статистику (середній рейтинг, розподіл зірок) за товаром.
     /// </summary>
     [HttpGet("product/{productId:guid}")]
     [ProducesResponseType(typeof(ProductReviewsSummaryDto), StatusCodes.Status200OK)]

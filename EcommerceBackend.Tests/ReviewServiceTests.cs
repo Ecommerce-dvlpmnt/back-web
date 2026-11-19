@@ -81,8 +81,8 @@ public sealed class ReviewServiceTests
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.CreateReviewAsync(botRequest));
 
-        Assert.Contains("Spam submission detected", exception.Message);
-        Assert.Null(reviewRepo.Created); // Запись не должна попасть в базу
+        Assert.Contains("Виявлено спам-активність", exception.Message);
+        Assert.Null(reviewRepo.Created);
     }
 
     [Fact]

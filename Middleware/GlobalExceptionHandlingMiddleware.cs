@@ -67,15 +67,14 @@ public sealed class GlobalExceptionHandlingMiddleware(
         InvalidOperationException => (StatusCodes.Status409Conflict, exception.Message),
         UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, exception.Message),
         DbUpdateException { InnerException: PostgresException postgres } => MapPostgres(postgres),
-        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
+        _ => (StatusCodes.Status500InternalServerError, "Сталася непередбачена помилка.")
     };
 
-    // Ошибки базы по SQLSTATE: 23505 дубль уникального поля, 23503 несуществующая связь.
     private static (int StatusCode, string Message) MapPostgres(PostgresException postgres) =>
         postgres.SqlState switch
         {
-            "23505" => (StatusCodes.Status409Conflict, "A record with the same unique value already exists."),
-            "23503" => (StatusCodes.Status400BadRequest, "A referenced record does not exist."),
-            _ => (StatusCodes.Status500InternalServerError, "A database error occurred.")
+            "23505" => (StatusCodes.Status409Conflict, "Запис із таким унікальним значенням вже існує."),
+            "23503" => (StatusCodes.Status400BadRequest, "Пов'язаний запис не існує."),
+            _ => (StatusCodes.Status500InternalServerError, "Сталася помилка бази даних.")
         };
 }
