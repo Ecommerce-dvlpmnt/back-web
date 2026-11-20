@@ -1125,34 +1125,105 @@ public sealed class ReferralService(
             .Take(clampedLimit)
             .ToListAsync(cancellationToken);
 
-        return orders
-            .Select(o => new AdminBotOrderNotificationDto(
-                o.Id,
-                o.OrderNumber,
-                o.PublicId,
-                $"{o.CustomerFirstName} {o.CustomerLastName}".Trim(),
-                o.CustomerPhone,
-                o.DeliveryCityName,
-                o.DeliveryWarehouseName,
-                o.PaymentMethod,
-                o.OrderStatus,
-                o.TotalPrice,
-                o.DiscountAmount,
-                o.PromoCode?.Code,
-                o.PromoCode?.DiscountPercent,
-                o.Referrer?.Name,
-                o.Referrer?.ReferralCode,
-                o.ReferralRewardAmount,
-                o.CreatedAt,
-                o.Items
-                    .Select(i => new AdminBotOrderItemDto(
-                        i.ProductNameSnapshot,
-                        i.Quantity,
-                        i.UnitPrice,
-                        i.UnitPrice * i.Quantity))
-                    .ToArray()))
-            .ToArray();
+        return orders.Select(MapToAdminBotOrderDto).ToArray();
     }
+
+    public async Task<AdminBotOrdersPageDto> GetAdminBotOrdersPageAsync(
+        string filter = "all",
+        int page = 0,
+        int pageSize = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedFilter = (filter ?? "all").Trim().ToLowerInvariant();
+        var clampedSize = Math.Clamp(pageSize, 1, 20);
+        var clampedPage = Math.Max(0, page);
+
+        var localNow = DateTime.Now;
+        var todayStartUtc = DateTime.SpecifyKind(localNow.Date, DateTimeKind.Local).ToUniversalTime();
+        var yesterdayStartUtc = todayStartUtc.AddDays(-1);
+        var weekStartUtc = todayStartUtc.AddDays(-7);
+
+        var query = dbContext.Orders.AsNoTracking();
+
+        query = normalizedFilter switch
+        {
+            "today" => query.Where(o => o.CreatedAt >= todayStartUtc),
+            "yesterday" => query.Where(o => o.CreatedAt >= yesterdayStartUtc && o.CreatedAt < todayStartUtc),
+            "7d" => query.Where(o => o.CreatedAt >= weekStartUtc),
+            _ => query
+        };
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var totalRevenue = totalCount > 0
+            ? await query
+                .Where(o => o.OrderStatus != OrderStatus.Cancelled && o.OrderStatus != OrderStatus.Refused && o.OrderStatus != OrderStatus.Returned)
+                .SumAsync(o => (decimal?)o.TotalPrice, cancellationToken) ?? 0m
+            : 0m;
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)clampedSize));
+        if (clampedPage >= totalPages)
+        {
+            clampedPage = totalPages - 1;
+        }
+
+        var orders = await query
+            .Include(o => o.Items)
+            .Include(o => o.Referrer)
+            .Include(o => o.PromoCode)
+            .OrderByDescending(o => o.CreatedAt)
+            .Skip(clampedPage * clampedSize)
+            .Take(clampedSize)
+            .ToListAsync(cancellationToken);
+
+        return new AdminBotOrdersPageDto(
+            normalizedFilter,
+            clampedPage,
+            clampedSize,
+            totalCount,
+            totalRevenue,
+            orders.Select(MapToAdminBotOrderDto).ToArray());
+    }
+
+    public async Task<AdminBotOrderNotificationDto?> GetAdminBotOrderByNumberAsync(
+        int orderNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Referrer)
+            .Include(o => o.PromoCode)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber, cancellationToken);
+
+        return order is null ? null : MapToAdminBotOrderDto(order);
+    }
+
+    private static AdminBotOrderNotificationDto MapToAdminBotOrderDto(Order o) =>
+        new(
+            o.Id,
+            o.OrderNumber,
+            o.PublicId,
+            $"{o.CustomerFirstName} {o.CustomerLastName}".Trim(),
+            o.CustomerPhone,
+            o.DeliveryCityName,
+            o.DeliveryWarehouseName,
+            o.PaymentMethod,
+            o.OrderStatus,
+            o.TotalPrice,
+            o.DiscountAmount,
+            o.PromoCode?.Code,
+            o.PromoCode?.DiscountPercent,
+            o.Referrer?.Name,
+            o.Referrer?.ReferralCode,
+            o.ReferralRewardAmount,
+            o.CreatedAt,
+            o.Items
+                .Select(i => new AdminBotOrderItemDto(
+                    i.ProductNameSnapshot,
+                    i.Quantity,
+                    i.UnitPrice,
+                    i.UnitPrice * i.Quantity))
+                .ToArray());
 
     private static PromoCodeResponse MapToPromoCodeResponse(PromoCode promo) =>
         new(

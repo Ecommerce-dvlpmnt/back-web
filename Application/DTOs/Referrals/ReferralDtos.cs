@@ -228,3 +228,11 @@ public sealed record AdminBotOrderNotificationDto(
     decimal ReferralRewardAmount,
     DateTime CreatedAt,
     IReadOnlyList<AdminBotOrderItemDto> Items);
+
+public sealed record AdminBotOrdersPageDto(
+    string Filter,
+    int Page,
+    int PageSize,
+    int TotalOrdersCount,
+    decimal TotalRevenue,
+    IReadOnlyList<AdminBotOrderNotificationDto> Items);

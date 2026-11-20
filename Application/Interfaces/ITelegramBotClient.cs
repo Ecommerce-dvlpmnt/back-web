@@ -61,6 +61,16 @@ public interface ITelegramBotClient
         CancellationToken cancellationToken = default) =>
         SendMessageAsync(telegramUserId, text, cancellationToken);
 
+    Task<bool> EditMessageTextAsync(
+        long chatId,
+        long messageId,
+        string text,
+        TelegramInlineKeyboardMarkup? inlineMarkup = null,
+        CancellationToken cancellationToken = default) =>
+        inlineMarkup is not null
+            ? SendMessageWithInlineKeyboardAsync(chatId, text, inlineMarkup, cancellationToken)
+            : SendMessageAsync(chatId, text, cancellationToken);
+
     Task<bool> AnswerCallbackQueryAsync(
         string callbackQueryId,
         string? text = null,

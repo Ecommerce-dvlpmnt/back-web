@@ -248,6 +248,53 @@ public sealed class TelegramBotClient(
         return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, inlineMarkup, cancellationToken);
     }
 
+    public async Task<bool> EditMessageTextAsync(
+        long chatId,
+        long messageId,
+        string text,
+        TelegramInlineKeyboardMarkup? inlineMarkup = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (chatId <= 0)
+        {
+            return false;
+        }
+
+        if (messageId <= 0)
+        {
+            return await SendMessageCoreAsync(chatId, Guid.Empty, text, inlineMarkup, cancellationToken);
+        }
+
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "editMessageText"),
+                new TelegramEditMessageTextRequest(chatId, messageId, text, "HTML", inlineMarkup),
+                timeoutCts.Token);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка при редагуванні повідомлення {MessageId} у чаті {ChatId}.", messageId, chatId);
+            return false;
+        }
+    }
+
     public async Task<bool> AnswerCallbackQueryAsync(
         string callbackQueryId,
         string? text = null,
@@ -517,6 +564,15 @@ public sealed class TelegramBotClient(
 
     private sealed record TelegramSendMessageRequest(
         [property: JsonPropertyName("chat_id")] long ChatId,
+        [property: JsonPropertyName("text")] string Text,
+        [property: JsonPropertyName("parse_mode")] string ParseMode = "HTML",
+        [property: JsonPropertyName("reply_markup")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        object? ReplyMarkup = null);
+
+    private sealed record TelegramEditMessageTextRequest(
+        [property: JsonPropertyName("chat_id")] long ChatId,
+        [property: JsonPropertyName("message_id")] long MessageId,
         [property: JsonPropertyName("text")] string Text,
         [property: JsonPropertyName("parse_mode")] string ParseMode = "HTML",
         [property: JsonPropertyName("reply_markup")]

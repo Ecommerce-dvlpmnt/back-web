@@ -101,4 +101,31 @@ public interface IReferralService
         int limit = 10,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<AdminBotOrderNotificationDto>>(Array.Empty<AdminBotOrderNotificationDto>());
+
+    async Task<AdminBotOrdersPageDto> GetAdminBotOrdersPageAsync(
+        string filter = "all",
+        int page = 0,
+        int pageSize = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await GetRecentOrdersForAdminBotAsync(50, cancellationToken);
+        var clampedSize = Math.Clamp(pageSize, 1, 20);
+        var clampedPage = Math.Max(0, page);
+        var items = all.Skip(clampedPage * clampedSize).Take(clampedSize).ToArray();
+        return new AdminBotOrdersPageDto(
+            filter,
+            clampedPage,
+            clampedSize,
+            all.Count,
+            all.Sum(x => x.TotalPrice),
+            items);
+    }
+
+    async Task<AdminBotOrderNotificationDto?> GetAdminBotOrderByNumberAsync(
+        int orderNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await GetRecentOrdersForAdminBotAsync(50, cancellationToken);
+        return all.FirstOrDefault(x => x.OrderNumber == orderNumber);
+    }
 }

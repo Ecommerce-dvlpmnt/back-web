@@ -219,7 +219,7 @@ public sealed class TelegramBotCommandHandlerTests
     }
 
     [Fact]
-    public async Task AdminOrdersButton_DisplaysRecentOrdersWithItemsAndPromoOrReferral()
+    public async Task AdminOrdersButton_DisplaysInteractiveOrderButtons_AndOpensOrderDetailsOnClick()
     {
         var referralService = new FakeReferralService
         {
@@ -251,14 +251,31 @@ public sealed class TelegramBotCommandHandlerTests
         var telegramClient = new FakeTelegramBotClient();
         var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
 
+        // 1. Адмін натискає кнопку "📦 Замовлення" — отримує компактне зведення без спаму
         await handler.HandleUpdateAsync(CreateUpdate(777001, TelegramBotMenu.AdminOrdersButton));
 
         Assert.Single(telegramClient.Messages);
-        var text = telegramClient.Messages[0].Text;
-        Assert.Contains("#105", text);
-        Assert.Contains("Гірлянда штора 3x3 × 2 шт.", text);
-        Assert.Contains("<code>FAMILY15</code>", text);
-        Assert.Contains("1700.00 грн", text);
+        var listText = telegramClient.Messages[0].Text;
+        Assert.Contains("Замовлення (Усі замовлення)", listText);
+        Assert.Contains("1700.00 грн", listText);
+
+        // 2. Адмін клікає на інлайн-кнопку замовлення #105
+        var viewOrderCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_ord_105",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                null,
+                "ord_view:105:all:0"));
+
+        await handler.HandleUpdateAsync(viewOrderCallback);
+
+        var detailText = telegramClient.Messages[^1].Text;
+        Assert.Contains("#105", detailText);
+        Assert.Contains("Гірлянда штора 3x3 × 2 шт.", detailText);
+        Assert.Contains("<code>FAMILY15</code>", detailText);
+        Assert.Contains("1700.00 грн", detailText);
     }
 
     [Fact]

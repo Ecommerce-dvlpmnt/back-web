@@ -527,23 +527,173 @@ public sealed class TelegramBotCommandHandler(
 
     private async Task SendAdminOrdersAsync(long chatId, CancellationToken cancellationToken)
     {
-        var orders = await referralService.GetRecentOrdersForAdminBotAsync(10, cancellationToken);
-        if (orders.Count == 0)
+        await SendOrEditAdminOrdersListAsync(chatId, messageId: null, filter: "all", page: 0, cancellationToken);
+    }
+
+    private async Task SendOrEditAdminOrdersListAsync(
+        long chatId,
+        long? messageId,
+        string filter,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var normalizedFilter = (filter ?? "all").Trim().ToLowerInvariant();
+        if (normalizedFilter is not ("today" or "yesterday" or "7d" or "all"))
         {
-            await SendAdminAsync(chatId, "Замовлень поки немає.", cancellationToken);
+            normalizedFilter = "all";
+        }
+
+        var pageData = await referralService.GetAdminBotOrdersPageAsync(
+            normalizedFilter,
+            Math.Max(0, page),
+            5,
+            cancellationToken);
+
+        var filterTitle = normalizedFilter switch
+        {
+            "today" => "Сьогодні",
+            "yesterday" => "Вчора",
+            "7d" => "За 7 днів",
+            _ => "Усі замовлення"
+        };
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(pageData.TotalOrdersCount / (double)Math.Max(1, pageData.PageSize)));
+
+        var builder = new StringBuilder();
+        builder.AppendLine($"📦 <b>Замовлення ({filterTitle})</b>");
+        builder.AppendLine($"📊 Замовлень: <b>{pageData.TotalOrdersCount} шт.</b> • Сума: <b>{Money(pageData.TotalRevenue)} грн</b>");
+
+        if (pageData.Items.Count == 0)
+        {
+            builder.AppendLine();
+            builder.Append("<i>За обраний період замовлень немає.</i>");
+        }
+        else
+        {
+            builder.AppendLine($"📄 Сторінка: <b>{pageData.Page + 1} з {totalPages}</b>");
+            builder.AppendLine();
+            builder.Append("<i>Натисніть на замовлення нижче, щоб відкрити позиції, клієнта та промо/реферала:</i>");
+        }
+
+        var rows = new List<IReadOnlyList<TelegramInlineKeyboardButton>>
+        {
+            new[]
+            {
+                new TelegramInlineKeyboardButton(
+                    normalizedFilter == "today" ? "✅ Сьогодні" : "Сьогодні",
+                    "ord_list:today:0"),
+                new TelegramInlineKeyboardButton(
+                    normalizedFilter == "yesterday" ? "✅ Вчора" : "Вчора",
+                    "ord_list:yesterday:0"),
+                new TelegramInlineKeyboardButton(
+                    normalizedFilter == "7d" ? "✅ 7 днів" : "7 днів",
+                    "ord_list:7d:0"),
+                new TelegramInlineKeyboardButton(
+                    normalizedFilter == "all" ? "✅ Усі" : "Усі",
+                    "ord_list:all:0")
+            }
+        };
+
+        foreach (var order in pageData.Items)
+        {
+            var badge = !string.IsNullOrWhiteSpace(order.PromoCode)
+                ? " 🎟"
+                : !string.IsNullOrWhiteSpace(order.ReferrerCode)
+                    ? " 🤝"
+                    : string.Empty;
+
+            var customerShort = string.IsNullOrWhiteSpace(order.CustomerFullName)
+                ? "Клієнт"
+                : order.CustomerFullName.Length > 16
+                    ? order.CustomerFullName[..16] + "…"
+                    : order.CustomerFullName;
+
+            var buttonLabel = $"{FormatOrderStatusEmoji(order.OrderStatus)} #{order.OrderNumber} • {customerShort} • {Money(order.TotalPrice)} грн{badge}";
+            rows.Add(
+            [
+                new TelegramInlineKeyboardButton(
+                    buttonLabel,
+                    $"ord_view:{order.OrderNumber}:{normalizedFilter}:{pageData.Page}")
+            ]);
+        }
+
+        if (totalPages > 1)
+        {
+            var navButtons = new List<TelegramInlineKeyboardButton>();
+            if (pageData.Page > 0)
+            {
+                navButtons.Add(new TelegramInlineKeyboardButton(
+                    "⬅️ Попередні 5",
+                    $"ord_list:{normalizedFilter}:{pageData.Page - 1}"));
+            }
+
+            if (pageData.Page + 1 < totalPages)
+            {
+                navButtons.Add(new TelegramInlineKeyboardButton(
+                    "Наступні 5 ➡️",
+                    $"ord_list:{normalizedFilter}:{pageData.Page + 1}"));
+            }
+
+            if (navButtons.Count > 0)
+            {
+                rows.Add(navButtons);
+            }
+        }
+
+        var markup = new TelegramInlineKeyboardMarkup(rows);
+        if (messageId is > 0)
+        {
+            await telegramBotClient.EditMessageTextAsync(chatId, messageId.Value, builder.ToString(), markup, cancellationToken);
+        }
+        else
+        {
+            await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, builder.ToString(), markup, cancellationToken);
+        }
+    }
+
+    private async Task SendOrEditAdminOrderDetailAsync(
+        long chatId,
+        long? messageId,
+        int orderNumber,
+        string filter,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var order = await referralService.GetAdminBotOrderByNumberAsync(orderNumber, cancellationToken);
+        var backMarkup = new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("🔙 Назад до списку замовлень", $"ord_list:{filter}:{page}")
+            ]
+        ]);
+
+        if (order is null)
+        {
+            const string notFoundText = "⚠️ Замовлення не знайдено.";
+            if (messageId is > 0)
+            {
+                await telegramBotClient.EditMessageTextAsync(chatId, messageId.Value, notFoundText, backMarkup, cancellationToken);
+            }
+            else
+            {
+                await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, notFoundText, backMarkup, cancellationToken);
+            }
             return;
         }
 
-        var builder = new StringBuilder("📦 <b>Останні замовлення (детально по позиціях):</b>\n");
-        foreach (var order in orders)
-        {
-            builder.AppendLine();
-            builder.AppendLine("━━━━━━━━━━━━━━━━━━━━");
-            builder.AppendLine(TelegramBotClient.FormatAdminOrderMessage(order, isNewOrderNotification: false));
-            builder.AppendLine($"📌 Статус: <b>{FormatOrderStatus(order.OrderStatus)}</b> • {order.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
-        }
+        var builder = new StringBuilder();
+        builder.AppendLine(TelegramBotClient.FormatAdminOrderMessage(order, isNewOrderNotification: false));
+        builder.AppendLine();
+        builder.Append($"📌 Статус: <b>{FormatOrderStatus(order.OrderStatus)}</b> • {order.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
 
-        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+        if (messageId is > 0)
+        {
+            await telegramBotClient.EditMessageTextAsync(chatId, messageId.Value, builder.ToString(), backMarkup, cancellationToken);
+        }
+        else
+        {
+            await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, builder.ToString(), backMarkup, cancellationToken);
+        }
     }
 
     private async Task SendAdminReferralsAsync(long chatId, CancellationToken cancellationToken)
@@ -872,6 +1022,50 @@ public sealed class TelegramBotCommandHandler(
             {
                 await SendAdminAsync(chatId, "🛑 Промокод успішно вимкнено.", cancellationToken);
             }
+
+            return;
+        }
+
+        if (data.StartsWith("ord_list:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = data.Split(':');
+            var filter = parts.Length > 1 ? parts[1] : "all";
+            var page = parts.Length > 2 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPage)
+                ? parsedPage
+                : 0;
+
+            await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, null, cancellationToken);
+            await SendOrEditAdminOrdersListAsync(
+                chatId,
+                callbackQuery.Message?.MessageId,
+                filter,
+                page,
+                cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("ord_view:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = data.Split(':');
+            if (parts.Length < 2 || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var orderNumber))
+            {
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний номер замовлення.", cancellationToken);
+                return;
+            }
+
+            var filter = parts.Length > 2 ? parts[2] : "all";
+            var page = parts.Length > 3 && int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPage)
+                ? parsedPage
+                : 0;
+
+            await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, null, cancellationToken);
+            await SendOrEditAdminOrderDetailAsync(
+                chatId,
+                callbackQuery.Message?.MessageId,
+                orderNumber,
+                filter,
+                page,
+                cancellationToken);
         }
     }
 
@@ -1095,6 +1289,22 @@ public sealed class TelegramBotCommandHandler(
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Percent(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string FormatOrderStatusEmoji(OrderStatus status)
+    {
+        return status switch
+        {
+            OrderStatus.New => "🆕",
+            OrderStatus.Confirmed => "📋",
+            OrderStatus.Packed => "📦",
+            OrderStatus.Shipped => "🚚",
+            OrderStatus.Delivered => "✅",
+            OrderStatus.Cancelled => "❌",
+            OrderStatus.Refused => "🚫",
+            OrderStatus.Returned => "↩️",
+            _ => "•"
+        };
+    }
 
     private static string FormatOrderStatus(OrderStatus status)
     {
