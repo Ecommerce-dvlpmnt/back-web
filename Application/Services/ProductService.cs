@@ -31,6 +31,7 @@ public sealed class ProductService(
         CancellationToken cancellationToken = default)
     {
         query.OnlyActive = true;
+        query.SupplierId = null;
         var result = await productRepository.GetAllAsync(query, cancellationToken);
         return new PagedResult<PublicProductDto>
         {
@@ -74,6 +75,7 @@ public sealed class ProductService(
 
     public async Task<ProductDto> CreateAsync(CreateProductDto request, CancellationToken cancellationToken = default)
     {
+        ValidateProductValues(request);
         await EnsureUniqueAsync(request.Sku, request.Slug, null, cancellationToken);
         var now = DateTime.UtcNow;
         var product = new Product
@@ -108,6 +110,7 @@ public sealed class ProductService(
         UpdateProductDto request,
         CancellationToken cancellationToken = default)
     {
+        ValidateProductValues(request);
         await EnsureUniqueAsync(request.Sku, request.Slug, id, cancellationToken);
         var product = await productRepository.GetByIdAsync(id, cancellationToken);
         if (product is null)
@@ -315,6 +318,39 @@ public sealed class ProductService(
         Guid? excludeId = null,
         CancellationToken cancellationToken = default) =>
         productRepository.ExistsBySkuOrSlugAsync(sku, slug, excludeId, cancellationToken);
+
+    private static void ValidateProductValues(CreateProductDto request)
+    {
+        if (request.Price <= 0m)
+        {
+            throw new ArgumentException("Ціна продажу (Price) повинна бути більшою за 0.", nameof(request));
+        }
+
+        if (request.DropPrice < 0m)
+        {
+            throw new ArgumentException("Закупівельна ціна (DropPrice) не може бути від'ємною.", nameof(request));
+        }
+
+        if (request.DropPrice > request.Price)
+        {
+            throw new ArgumentException("Закупівельна ціна (DropPrice) не може перевищувати роздрібну ціну продажу (Price).", nameof(request));
+        }
+
+        if (request.OldPrice.HasValue && request.OldPrice.Value <= 0m)
+        {
+            throw new ArgumentException("Стара ціна (OldPrice) повинна бути більшою за 0.", nameof(request));
+        }
+
+        if (request.WeightKg.HasValue && request.WeightKg.Value < 0m)
+        {
+            throw new ArgumentException("Вага товару (WeightKg) не може бути від'ємною.", nameof(request));
+        }
+
+        if (request.Stock < 0)
+        {
+            throw new ArgumentException("Залишок на складі (Stock) не може бути від'ємним.", nameof(request));
+        }
+    }
 
     private async Task EnsureUniqueAsync(
         string sku,

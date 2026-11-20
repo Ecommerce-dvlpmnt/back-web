@@ -260,6 +260,12 @@ public sealed class OrderService(
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        var cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+        if (cancelledReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, "скасовано клієнтом", cancellationToken);
+        }
+
         logger?.LogInformation(
             "Замовлення #{OrderNumber} (PublicId: {PublicId}) скасовано клієнтом. Товари повернено на склад.",
             order.OrderNumber,
@@ -371,6 +377,10 @@ public sealed class OrderService(
         else if (OrderStockTransitionPolicy.RequiresStockDeduction(oldStatus, newStatus))
         {
             await DeductStockAsync(order, now, cancellationToken);
+            if (order.ReferrerId.HasValue && order.ReferralRewardStatus == ReferralRewardStatus.Cancelled)
+            {
+                order.ReferralRewardStatus = ReferralRewardStatus.Pending;
+            }
         }
 
         order.OrderStatus = newStatus;
@@ -548,12 +558,28 @@ public sealed class OrderService(
         ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, null, now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        ReferralRewardResult? cancelledReward = null;
+        if (request.PaymentStatus == PaymentStatus.Refunded)
+        {
+            cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
+
+        var telegramNotificationSent = false;
+        if (cancelledReward is not null)
+        {
+            telegramNotificationSent = await telegramBotClient.SendReferralRewardCancelledNotificationAsync(
+                cancelledReward,
+                "повернення коштів",
+                cancellationToken);
+        }
 
         return new OrderPaymentConfirmationResponse(
             MapToResponse(order),
-            null,
-            false);
+            cancelledReward,
+            telegramNotificationSent);
     }
 
     private async Task<Guid> ResolveWebhookOrderIdAsync(
@@ -628,7 +654,7 @@ public sealed class OrderService(
         DateTime now,
         CancellationToken cancellationToken)
     {
-        var productIds = order.Items.Select(i => i.ProductId).ToArray();
+        var productIds = order.Items.Select(i => i.ProductId).Distinct().Order().ToArray();
         var products = await dbContext.Products
             .FromSqlInterpolated(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")

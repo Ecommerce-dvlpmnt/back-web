@@ -25,12 +25,25 @@ public sealed class FinanceService(AppDbContext dbContext, ICurrencyRateService 
         var validOrders = await dbContext.Orders
             .AsNoTracking()
             .Where(o => !ExcludedStatuses.Contains(o.OrderStatus))
-            .Select(o => new { o.TotalPrice, o.TotalProfit })
+            .Select(o => new
+            {
+                o.TotalPrice,
+                o.TotalProfit,
+                o.ReferralRewardAmount,
+                o.ReferralRewardStatus,
+                o.IsReferralRewardPaid
+            })
             .ToListAsync(cancellationToken);
 
         var totalRevenue = Math.Round(validOrders.Sum(o => o.TotalPrice), 2);
-        var grossProfit = Math.Round(validOrders.Sum(o => o.TotalProfit), 2);
-        var totalDropCost = Math.Round(totalRevenue - grossProfit, 2);
+        var totalProductMargin = Math.Round(validOrders.Sum(o => o.TotalProfit), 2);
+        var totalDropCost = Math.Round(totalRevenue - totalProductMargin, 2);
+        var totalReferralRewards = Math.Round(
+            validOrders
+                .Where(o => o.IsReferralRewardPaid || o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid)
+                .Sum(o => o.ReferralRewardAmount),
+            2);
+        var grossProfit = Math.Max(0m, Math.Round(totalProductMargin - totalReferralRewards, 2));
 
         var totalRevenueUsd = Math.Round(totalRevenue / usdRate, 2);
         var totalDropCostUsd = Math.Round(totalDropCost / usdRate, 2);

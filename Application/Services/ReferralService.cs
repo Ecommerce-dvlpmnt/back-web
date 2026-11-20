@@ -187,7 +187,7 @@ public sealed class ReferralService(
                 throw new KeyNotFoundException($"Замовлення з ID '{orderId}' не знайдено.");
             }
 
-            if (order.ReferrerId is null || order.ReferralRewardStatus == ReferralRewardStatus.None || order.ReferralRewardStatus == ReferralRewardStatus.Cancelled)
+            if (order.ReferrerId is null || ((order.ReferralRewardStatus == ReferralRewardStatus.None || order.ReferralRewardStatus == ReferralRewardStatus.Cancelled) && !order.IsReferralRewardPaid))
             {
                 return null;
             }
@@ -202,7 +202,7 @@ public sealed class ReferralService(
                 return null;
             }
 
-            if (order.ReferralRewardStatus == ReferralRewardStatus.Paid)
+            if (order.ReferralRewardStatus == ReferralRewardStatus.Paid || order.IsReferralRewardPaid)
             {
                 partner.TotalEarned = Math.Max(0m, partner.TotalEarned - order.ReferralRewardAmount);
             }

@@ -15,11 +15,19 @@ public sealed class ProductsController(IProductService productService) : Control
     [ProducesResponseType(typeof(PagedResult<PublicProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<PublicProductDto>>> GetAll(
-        [FromQuery] ProductQueryParameters query,
+        [FromQuery] PublicProductQueryParameters query,
         CancellationToken cancellationToken)
     {
-        query.OnlyActive = true;
-        return Ok(await productService.GetPublicAllAsync(query, cancellationToken));
+        var parameters = new ProductQueryParameters
+        {
+            CategoryId = query.CategoryId,
+            Search = query.Search,
+            SortBy = query.SortBy,
+            PageNumber = query.PageNumber,
+            PageSize = query.PageSize,
+            OnlyActive = true
+        };
+        return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));
     }
 
     /// <summary>Картка активного товару за ID для вітрини.</summary>

@@ -178,6 +178,53 @@ public sealed class ProductServiceTests
         Assert.Contains(audit.Logs, l => l.Action == AuditLogActions.ProductDeleted);
     }
 
+    [Fact]
+    public async Task CreateAsync_RejectsDropPriceGreaterThanPrice()
+    {
+        var repo = new FakeProductRepository();
+        var service = new ProductService(repo, new FakeImageStorageService(), new FakeAuditLogService());
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CreateProductDto
+        {
+            Sku = "BAD-PRICE-1",
+            Name = "Bad Price Product",
+            Slug = "bad-price-product",
+            Price = 200m,
+            DropPrice = 300m,
+            Stock = 10
+        }));
+
+        Assert.Contains("DropPrice", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsNegativeDropPriceOrWeight()
+    {
+        var repo = new FakeProductRepository();
+        var service = new ProductService(repo, new FakeImageStorageService(), new FakeAuditLogService());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CreateProductDto
+        {
+            Sku = "NEG-DROP-1",
+            Name = "Neg Drop Product",
+            Slug = "neg-drop-product",
+            Price = 200m,
+            DropPrice = -10m,
+            Stock = 10
+        }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CreateProductDto
+        {
+            Sku = "NEG-WEIGHT-1",
+            Name = "Neg Weight Product",
+            Slug = "neg-weight-product",
+            Price = 200m,
+            DropPrice = 100m,
+            WeightKg = -0.5m,
+            Stock = 10
+        }));
+    }
+
     private sealed class FakeProductRepository : IProductRepository
     {
         public Dictionary<Guid, Product> Products { get; } = new();
