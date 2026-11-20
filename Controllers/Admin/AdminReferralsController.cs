@@ -93,4 +93,42 @@ public sealed class AdminReferralsController(IReferralService referralService) :
         var updated = await referralService.ProcessPayoutRequestAsync(id, request, cancellationToken);
         return Ok(updated);
     }
+
+    [HttpGet("promos")]
+    [ProducesResponseType(typeof(IReadOnlyList<PromoCodeResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<PromoCodeResponse>>> GetAllPromoCodes(
+        CancellationToken cancellationToken)
+    {
+        var promos = await referralService.GetAllPromoCodesAsync(cancellationToken);
+        return Ok(promos);
+    }
+
+    [HttpPost("promos")]
+    [ProducesResponseType(typeof(PromoCodeResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<PromoCodeResponse>> CreatePromoCode(
+        [FromBody] CreatePromoCodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var created = await referralService.CreatePromoCodeAsync(request, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, created);
+    }
+
+    [HttpDelete("promos/{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeactivatePromoCode(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var deactivated = await referralService.DeactivatePromoCodeAsync(id, cancellationToken);
+        return deactivated ? NoContent() : NotFound();
+    }
 }

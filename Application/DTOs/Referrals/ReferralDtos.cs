@@ -75,7 +75,9 @@ public sealed record UpdateReferralPartnerRequest
 public sealed record ReferralCodeValidationResponse(
     bool IsValid,
     string? ReferralCode,
-    string? PartnerName);
+    string? PartnerName,
+    decimal DiscountPercent = 0m,
+    bool IsPromoCode = false);
 
 public sealed record BotRegisterPartnerRequest
 {
@@ -175,3 +177,54 @@ public sealed record UpdatePayoutStatusRequest
     [StringLength(500, ErrorMessage = "Коментар не повинен перевищувати 500 символів.")]
     public string? AdminComment { get; init; }
 }
+
+public sealed record CreatePromoCodeRequest
+{
+    [StringLength(32, MinimumLength = 2)]
+    [RegularExpression(@"^[A-Za-z0-9_-]+$")]
+    public string? Code { get; init; }
+
+    [Range(0.01, 99.99, ErrorMessage = "Відсоток знижки має бути від 0.01% до 99.99%.")]
+    public decimal DiscountPercent { get; init; }
+
+    [Range(0, 1000000)]
+    public int? MaxUses { get; init; }
+
+    public long? CreatedByTelegramUserId { get; init; }
+}
+
+public sealed record PromoCodeResponse(
+    Guid Id,
+    string Code,
+    decimal DiscountPercent,
+    int? MaxUses,
+    int UsedCount,
+    bool IsActive,
+    long? CreatedByTelegramUserId,
+    DateTime CreatedAt);
+
+public sealed record AdminBotOrderItemDto(
+    string ProductName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal LineTotal);
+
+public sealed record AdminBotOrderNotificationDto(
+    Guid OrderId,
+    int OrderNumber,
+    string PublicId,
+    string CustomerFullName,
+    string CustomerPhone,
+    string? DeliveryCityName,
+    string? DeliveryWarehouseName,
+    PaymentMethod PaymentMethod,
+    OrderStatus OrderStatus,
+    decimal TotalPrice,
+    decimal DiscountAmount,
+    string? PromoCode,
+    decimal? PromoDiscountPercent,
+    string? ReferrerName,
+    string? ReferrerCode,
+    decimal ReferralRewardAmount,
+    DateTime CreatedAt,
+    IReadOnlyList<AdminBotOrderItemDto> Items);

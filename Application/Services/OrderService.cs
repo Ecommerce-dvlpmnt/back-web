@@ -128,29 +128,66 @@ public sealed class OrderService(
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        if (order.ReferrerId.HasValue && order.ReferralRewardAmount > 0m)
+        Partner? attachedPartner = null;
+        if (order.ReferrerId.HasValue)
         {
-            var partner = await dbContext.Partners
+            attachedPartner = await dbContext.Partners
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == order.ReferrerId.Value, cancellationToken);
 
-            if (partner is not null)
+            if (attachedPartner is not null && order.ReferralRewardAmount > 0m)
             {
                 _ = telegramBotClient.SendReferralRewardPendingNotificationAsync(
                     new ReferralRewardResult(
                         order.Id,
                         order.OrderNumber,
-                        partner.Id,
-                        partner.TelegramUserId,
-                        partner.Name,
+                        attachedPartner.Id,
+                        attachedPartner.TelegramUserId,
+                        attachedPartner.Name,
                         order.TotalPrice,
-                        partner.CommissionPercent,
+                        attachedPartner.CommissionPercent,
                         order.ReferralRewardAmount,
-                        partner.TotalEarned,
+                        attachedPartner.TotalEarned,
                         ReferralRewardStatus.Pending),
                     CancellationToken.None);
             }
         }
+
+        PromoCode? attachedPromo = null;
+        if (order.PromoCodeId.HasValue)
+        {
+            attachedPromo = await dbContext.PromoCodes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == order.PromoCodeId.Value, cancellationToken);
+        }
+
+        _ = telegramBotClient.SendAdminNewOrderNotificationAsync(
+            new AdminBotOrderNotificationDto(
+                order.Id,
+                order.OrderNumber,
+                order.PublicId,
+                $"{order.CustomerFirstName} {order.CustomerLastName}".Trim(),
+                order.CustomerPhone,
+                order.DeliveryCityName,
+                order.DeliveryWarehouseName,
+                order.PaymentMethod,
+                order.OrderStatus,
+                order.TotalPrice,
+                order.DiscountAmount,
+                attachedPromo?.Code,
+                attachedPromo?.DiscountPercent,
+                attachedPartner?.Name,
+                attachedPartner?.ReferralCode,
+                order.ReferralRewardAmount,
+                order.CreatedAt,
+                order.Items
+                    .Select(i => new AdminBotOrderItemDto(
+                        i.ProductNameSnapshot,
+                        i.Quantity,
+                        i.UnitPrice,
+                        i.UnitPrice * i.Quantity))
+                    .ToArray()),
+            CancellationToken.None);
 
         logger?.LogInformation(
             "Замовлення #{OrderNumber} успішно створено (PublicId: {PublicId}). Позицій: {ItemCount}, загальна сума: {TotalPrice} грн.",

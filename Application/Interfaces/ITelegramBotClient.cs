@@ -53,4 +53,27 @@ public interface ITelegramBotClient
         decimal amount,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    Task<bool> SendMessageWithInlineKeyboardAsync(
+        long telegramUserId,
+        string text,
+        TelegramInlineKeyboardMarkup inlineMarkup,
+        CancellationToken cancellationToken = default) =>
+        SendMessageAsync(telegramUserId, text, cancellationToken);
+
+    Task<bool> AnswerCallbackQueryAsync(
+        string callbackQueryId,
+        string? text = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
+
+    Task<bool> SendAdminNewOrderNotificationAsync(
+        AdminBotOrderNotificationDto order,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
+
+    Task<bool> SendAdminPayoutRequestNotificationAsync(
+        AdminPayoutResponse payout,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
 }

@@ -1,10 +1,12 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json.Serialization;
 using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Telegram;
+using EcommerceBackend.Domain.Enums;
 
 namespace EcommerceBackend.Application.Services;
 
@@ -31,7 +33,7 @@ public sealed class TelegramBotClient(
         var payload = new TelegramGetUpdatesRequest(
             offset,
             Math.Clamp(timeoutSeconds, 1, 50),
-            ["message"]);
+            ["message", "callback_query"]);
 
         try
         {
@@ -237,11 +239,216 @@ public sealed class TelegramBotClient(
         return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, null, cancellationToken);
     }
 
+    public async Task<bool> SendMessageWithInlineKeyboardAsync(
+        long telegramUserId,
+        string text,
+        TelegramInlineKeyboardMarkup inlineMarkup,
+        CancellationToken cancellationToken = default)
+    {
+        return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, inlineMarkup, cancellationToken);
+    }
+
+    public async Task<bool> AnswerCallbackQueryAsync(
+        string callbackQueryId,
+        string? text = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(callbackQueryId))
+        {
+            return false;
+        }
+
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "answerCallbackQuery"),
+                new TelegramAnswerCallbackQueryRequest(callbackQueryId, text),
+                timeoutCts.Token);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка при відповіді на callback_query {CallbackQueryId}.", callbackQueryId);
+            return false;
+        }
+    }
+
+    public async Task<bool> SendAdminNewOrderNotificationAsync(
+        AdminBotOrderNotificationDto order,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+        if (adminIds.Count == 0)
+        {
+            return false;
+        }
+
+        var text = FormatAdminOrderMessage(order, isNewOrderNotification: true);
+        var anySent = false;
+
+        foreach (var adminId in adminIds)
+        {
+            if (await SendMessageCoreAsync(adminId, Guid.Empty, text, null, cancellationToken))
+            {
+                anySent = true;
+            }
+        }
+
+        return anySent;
+    }
+
+    public async Task<bool> SendAdminPayoutRequestNotificationAsync(
+        AdminPayoutResponse payout,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(payout);
+
+        var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+        if (adminIds.Count == 0)
+        {
+            return false;
+        }
+
+        var text = FormatAdminPayoutRequestMessage(payout);
+        var inlineMarkup = CreatePayoutApprovalInlineMarkup(payout.Id);
+        var anySent = false;
+
+        foreach (var adminId in adminIds)
+        {
+            if (await SendMessageCoreAsync(adminId, payout.PartnerId, text, inlineMarkup, cancellationToken))
+            {
+                anySent = true;
+            }
+        }
+
+        return anySent;
+    }
+
+    public static string FormatAdminOrderMessage(AdminBotOrderNotificationDto order, bool isNewOrderNotification = false)
+    {
+        var builder = new StringBuilder();
+        var headerPrefix = isNewOrderNotification ? "🛍 <b>Нове замовлення" : "📦 <b>Замовлення";
+        builder.AppendLine($"{headerPrefix} #{order.OrderNumber}</b> (<code>{WebUtility.HtmlEncode(order.PublicId)}</code>)");
+        builder.AppendLine($"👤 Клієнт: <b>{WebUtility.HtmlEncode(order.CustomerFullName)}</b>");
+        builder.AppendLine($"📞 Телефон: <code>{WebUtility.HtmlEncode(order.CustomerPhone)}</code>");
+
+        if (!string.IsNullOrWhiteSpace(order.DeliveryCityName) || !string.IsNullOrWhiteSpace(order.DeliveryWarehouseName))
+        {
+            var delivery = string.Join(
+                ", ",
+                new[] { order.DeliveryCityName, order.DeliveryWarehouseName }
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => WebUtility.HtmlEncode(s!.Trim())));
+            builder.AppendLine($"📍 Доставка: {delivery}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("📋 <b>Позиції:</b>");
+        foreach (var item in order.Items)
+        {
+            builder.AppendLine(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "• {0} × {1} шт. — <b>{2:0.00} грн</b> ({3:0.00} грн/шт.)",
+                    WebUtility.HtmlEncode(item.ProductName),
+                    item.Quantity,
+                    item.LineTotal,
+                    item.UnitPrice));
+        }
+
+        builder.AppendLine();
+        if (!string.IsNullOrWhiteSpace(order.PromoCode))
+        {
+            var percentText = order.PromoDiscountPercent.HasValue
+                ? string.Format(CultureInfo.InvariantCulture, "-{0:0.##}%", order.PromoDiscountPercent.Value)
+                : "знижка";
+            builder.AppendLine(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "🎟 Промокод: <code>{0}</code> ({1}, -{2:0.00} грн)",
+                    WebUtility.HtmlEncode(order.PromoCode),
+                    percentText,
+                    order.DiscountAmount));
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.ReferrerCode))
+        {
+            var refName = string.IsNullOrWhiteSpace(order.ReferrerName)
+                ? string.Empty
+                : $"{WebUtility.HtmlEncode(order.ReferrerName)} ";
+            builder.AppendLine(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "🤝 Реферал: {0}(<code>{1}</code>) • бонус: <b>{2:0.00} грн</b>",
+                    refName,
+                    WebUtility.HtmlEncode(order.ReferrerCode),
+                    order.ReferralRewardAmount));
+        }
+
+        if (string.IsNullOrWhiteSpace(order.PromoCode) && string.IsNullOrWhiteSpace(order.ReferrerCode))
+        {
+            builder.AppendLine("🏷 Промо/Реферал: <i>пряме замовлення</i>");
+        }
+
+        builder.Append(
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "💰 <b>Загальна сума: {0:0.00} грн</b>",
+                order.TotalPrice));
+
+        return builder.ToString();
+    }
+
+    public static string FormatAdminPayoutRequestMessage(AdminPayoutResponse payout)
+    {
+        var holderLine = !string.IsNullOrWhiteSpace(payout.CardHolderName)
+            ? $"\n🏦 Отримувач: <b>{WebUtility.HtmlEncode(payout.CardHolderName)}</b>"
+            : string.Empty;
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "💸 <b>Заявка на виведення коштів</b>\n\n👤 Реферал: <b>{0}</b> (<code>{1}</code>)\n💰 Сума: <b>{2:0.00} грн</b>\n💳 Картка (натисніть для копіювання):\n<code>{3}</code>{4}\n📅 Дата: {5:dd.MM.yyyy HH:mm}",
+            WebUtility.HtmlEncode(payout.PartnerName),
+            WebUtility.HtmlEncode(payout.PartnerReferralCode),
+            payout.Amount,
+            WebUtility.HtmlEncode(payout.CardNumber),
+            holderLine,
+            payout.CreatedAt.ToLocalTime());
+    }
+
+    public static TelegramInlineKeyboardMarkup CreatePayoutApprovalInlineMarkup(Guid payoutId)
+    {
+        return new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("✅ Виплачено", $"payout_ok:{payoutId:N}"),
+                new TelegramInlineKeyboardButton("❌ Відхилити", $"payout_no:{payoutId:N}")
+            ]
+        ]);
+    }
+
     private async Task<bool> SendMessageCoreAsync(
         long telegramUserId,
         Guid partnerId,
         string text,
-        TelegramReplyMarkup? replyMarkup,
+        object? replyMarkup,
         CancellationToken cancellationToken)
     {
         if (telegramUserId <= 0)
@@ -314,7 +521,13 @@ public sealed class TelegramBotClient(
         [property: JsonPropertyName("parse_mode")] string ParseMode = "HTML",
         [property: JsonPropertyName("reply_markup")]
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        TelegramReplyMarkup? ReplyMarkup = null);
+        object? ReplyMarkup = null);
+
+    private sealed record TelegramAnswerCallbackQueryRequest(
+        [property: JsonPropertyName("callback_query_id")] string CallbackQueryId,
+        [property: JsonPropertyName("text")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Text = null);
 
     private sealed record TelegramSetMyCommandsRequest(
         [property: JsonPropertyName("commands")] IReadOnlyList<TelegramBotCommand> Commands);

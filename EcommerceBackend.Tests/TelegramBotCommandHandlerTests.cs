@@ -203,15 +203,178 @@ public sealed class TelegramBotCommandHandlerTests
         Assert.Contains("<code>https://front-web-pi.vercel.app/?ref=JINGLE5</code>", text);
     }
 
+    [Fact]
+    public async Task AdminStartCommand_ShowsAdminMenu_AndDoesNotRegisterAsSchooler()
+    {
+        var referralService = new FakeReferralService();
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001, 777002");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "/start"));
+
+        Assert.False(referralService.RegisterCalled);
+        Assert.Single(telegramClient.Messages);
+        Assert.Contains("Адмін-панель Jingle Decor", telegramClient.Messages[0].Text);
+        Assert.Equal(TelegramBotMenu.AdminReplyMarkup, telegramClient.ReplyMarkups[0]);
+    }
+
+    [Fact]
+    public async Task AdminOrdersButton_DisplaysRecentOrdersWithItemsAndPromoOrReferral()
+    {
+        var referralService = new FakeReferralService
+        {
+            AdminOrders =
+            [
+                new AdminBotOrderNotificationDto(
+                    Guid.NewGuid(),
+                    105,
+                    "ord_105",
+                    "Іван Іванов",
+                    "+380501112233",
+                    "Київ",
+                    "Відділення №15",
+                    PaymentMethod.CashOnDelivery,
+                    OrderStatus.New,
+                    1700m,
+                    300m,
+                    "FAMILY15",
+                    15m,
+                    null,
+                    null,
+                    0m,
+                    DateTime.UtcNow,
+                    [
+                        new AdminBotOrderItemDto("Гірлянда штора 3x3", 2, 1000m, 2000m)
+                    ])
+            ]
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, TelegramBotMenu.AdminOrdersButton));
+
+        Assert.Single(telegramClient.Messages);
+        var text = telegramClient.Messages[0].Text;
+        Assert.Contains("#105", text);
+        Assert.Contains("Гірлянда штора 3x3 × 2 шт.", text);
+        Assert.Contains("<code>FAMILY15</code>", text);
+        Assert.Contains("1700.00 грн", text);
+    }
+
+    [Fact]
+    public async Task AdminReferralsButton_DisplaysWhoInvitedHowManyAndTurnover()
+    {
+        var referralService = new FakeReferralService
+        {
+            AllPartners =
+            [
+                new PartnerResponse(
+                    Guid.NewGuid(),
+                    555001,
+                    "Школяр Максим",
+                    "MAX5",
+                    5m,
+                    450m,
+                    DateTime.UtcNow,
+                    PendingBalance: 150m,
+                    AvailableBalance: 450m,
+                    TotalOrders: 12,
+                    DeliveredOrders: 9,
+                    TotalTurnover: 12000m,
+                    CardNumber: "4149499912345678")
+            ]
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, TelegramBotMenu.AdminReferralsButton));
+
+        Assert.Single(telegramClient.Messages);
+        var text = telegramClient.Messages[0].Text;
+        Assert.Contains("Школяр Максим", text);
+        Assert.Contains("<code>MAX5</code>", text);
+        Assert.Contains("Запрошено замовлень: <b>12</b> (доставлено: <b>9</b>)", text);
+        Assert.Contains("12000.00 грн", text);
+        Assert.Contains("<code>4149499912345678</code>", text);
+    }
+
+    [Fact]
+    public async Task AdminCreatePromoWizard_CreatesPromoCodeWithDiscountAndLimit()
+    {
+        var referralService = new FakeReferralService();
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, TelegramBotMenu.AdminCreatePromoButton));
+        Assert.True(TelegramBotCommandHandler.HasActiveAdminPromoState(777001));
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "FAMILY15"));
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "15"));
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "5"));
+
+        Assert.False(TelegramBotCommandHandler.HasActiveAdminPromoState(777001));
+        Assert.NotNull(referralService.LastCreatedPromoRequest);
+        Assert.Equal("FAMILY15", referralService.LastCreatedPromoRequest!.Code);
+        Assert.Equal(15m, referralService.LastCreatedPromoRequest.DiscountPercent);
+        Assert.Equal(5, referralService.LastCreatedPromoRequest.MaxUses);
+        Assert.Contains("Промокод успішно створено", telegramClient.Messages[^1].Text);
+        Assert.Contains("<code>FAMILY15</code>", telegramClient.Messages[^1].Text);
+    }
+
+    [Fact]
+    public async Task AdminCallbackQuery_ApprovesPayout_AndRejectsNonAdmin()
+    {
+        var referralService = new FakeReferralService();
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+        var payoutId = Guid.NewGuid();
+
+        // Спроба звичайного школяра натиснути callback кнопку адміна
+        var schoolerCallback = new TelegramUpdate(
+            1,
+             null,
+            new TelegramCallbackQuery(
+                "cb_1",
+                new TelegramUser(999999, false, "Hacker", null, "hacker", null),
+                null,
+                $"payout_ok:{payoutId:N}"));
+
+        await handler.HandleUpdateAsync(schoolerCallback);
+        Assert.Null(referralService.LastProcessedPayoutId);
+
+        // Адмін натискає кнопку підтвердження виплати
+        var adminCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_2",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                null,
+                $"payout_ok:{payoutId:N}"));
+
+        await handler.HandleUpdateAsync(adminCallback);
+        Assert.Equal(payoutId, referralService.LastProcessedPayoutId);
+        Assert.Equal(PayoutRequestStatus.Completed, referralService.LastProcessedPayoutRequest?.Status);
+        Assert.Contains("ВИПЛАЧЕНО", telegramClient.Messages[^1].Text);
+    }
+
     private static TelegramBotCommandHandler CreateHandler(
         FakeReferralService referralService,
-        FakeTelegramBotClient telegramClient)
+        FakeTelegramBotClient telegramClient,
+        string? adminIds = null)
     {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Referral:PublicSiteUrl"] = "https://front-web-pi.vercel.app"
+        };
+
+        if (!string.IsNullOrWhiteSpace(adminIds))
+        {
+            settings["Telegram:AdminUserIds"] = adminIds;
+        }
+
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Referral:PublicSiteUrl"] = "https://front-web-pi.vercel.app"
-            })
+            .AddInMemoryCollection(settings)
             .Build();
 
         return new TelegramBotCommandHandler(
@@ -331,11 +494,17 @@ public sealed class TelegramBotCommandHandlerTests
         public bool RegisterCalled { get; private set; }
         public BotRegisterPartnerRequest? LastRegisterRequest { get; private set; }
         public BotPayoutRequestDto? LastPayoutRequest { get; private set; }
+        public CreatePromoCodeRequest? LastCreatedPromoRequest { get; private set; }
+        public Guid? LastProcessedPayoutId { get; private set; }
+        public UpdatePayoutStatusRequest? LastProcessedPayoutRequest { get; private set; }
         public BotPartnerProfileResponse? Profile { get; set; }
         public BotPartnerProfileResponse? RegisteredProfile { get; set; }
         public BotPartnerStatsResponse? Stats { get; set; }
         public BotPartnerOrdersResponse? Orders { get; set; }
         public IReadOnlyList<BotPayoutResponse> Payouts { get; set; } = Array.Empty<BotPayoutResponse>();
+        public IReadOnlyList<PartnerResponse> AllPartners { get; set; } = Array.Empty<PartnerResponse>();
+        public IReadOnlyList<AdminBotOrderNotificationDto> AdminOrders { get; set; } = Array.Empty<AdminBotOrderNotificationDto>();
+        public IReadOnlyList<PromoCodeResponse> PromoCodes { get; set; } = Array.Empty<PromoCodeResponse>();
 
         public Task<Partner?> FindPartnerByCodeAsync(
             string? referralCode,
@@ -365,7 +534,7 @@ public sealed class TelegramBotCommandHandlerTests
 
         public Task<IReadOnlyList<PartnerResponse>> GetAllPartnersAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<PartnerResponse>>(Array.Empty<PartnerResponse>());
+            Task.FromResult(AllPartners);
 
         public Task<PartnerResponse?> GetPartnerByIdAsync(
             Guid id,
@@ -468,8 +637,11 @@ public sealed class TelegramBotCommandHandlerTests
         public Task<AdminPayoutResponse> ProcessPayoutRequestAsync(
             Guid payoutId,
             UpdatePayoutStatusRequest request,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AdminPayoutResponse(
+            CancellationToken cancellationToken = default)
+        {
+            LastProcessedPayoutId = payoutId;
+            LastProcessedPayoutRequest = request;
+            return Task.FromResult(new AdminPayoutResponse(
                 payoutId,
                 Guid.NewGuid(),
                 1,
@@ -482,5 +654,31 @@ public sealed class TelegramBotCommandHandlerTests
                 request.AdminComment,
                 DateTime.UtcNow,
                 DateTime.UtcNow));
+        }
+
+        public Task<PromoCodeResponse> CreatePromoCodeAsync(
+            CreatePromoCodeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastCreatedPromoRequest = request;
+            return Task.FromResult(new PromoCodeResponse(
+                Guid.NewGuid(),
+                request.Code ?? "PROMO_AUTO",
+                request.DiscountPercent,
+                request.MaxUses,
+                0,
+                true,
+                request.CreatedByTelegramUserId,
+                DateTime.UtcNow));
+        }
+
+        public Task<IReadOnlyList<PromoCodeResponse>> GetAllPromoCodesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(PromoCodes);
+
+        public Task<IReadOnlyList<AdminBotOrderNotificationDto>> GetRecentOrdersForAdminBotAsync(
+            int limit = 10,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(AdminOrders);
     }
 }

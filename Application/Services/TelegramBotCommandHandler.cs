@@ -19,12 +19,24 @@ public sealed class TelegramBotCommandHandler(
     private const int MaxActiveWithdrawalStates = 5000;
     private static readonly TimeSpan WithdrawalStateTtl = TimeSpan.FromMinutes(10);
     private static readonly ConcurrentDictionary<long, WithdrawalState> WithdrawalStates = new();
+    private static readonly ConcurrentDictionary<long, AdminPromoCreationState> AdminPromoStates = new();
 
     public static bool HasActiveWithdrawalState(long telegramUserId) =>
         WithdrawalStates.TryGetValue(telegramUserId, out var state) && !state.IsExpired(DateTime.UtcNow);
 
+    public static bool HasActiveAdminPromoState(long telegramUserId) =>
+        AdminPromoStates.TryGetValue(telegramUserId, out var state) && !state.IsExpired(DateTime.UtcNow);
+
     public async Task HandleUpdateAsync(TelegramUpdate update, CancellationToken cancellationToken = default)
     {
+        CleanupExpiredStates();
+
+        if (update.CallbackQuery is { From: { IsBot: false } cbUser, Data: { Length: > 0 } cbData } callbackQuery)
+        {
+            await HandleCallbackQueryAsync(callbackQuery, cbUser, cbData, cancellationToken);
+            return;
+        }
+
         if (update.Message is not
             {
                 From: { IsBot: false } from,
@@ -46,12 +58,30 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
-        CleanupExpiredStates();
+        var isAdmin = TelegramBotMenu.IsAdmin(configuration, from.Id);
+        var command = ParseCommand(text)
+            ?? (isAdmin ? TelegramBotMenu.ResolveAdminCommand(text) : null)
+            ?? TelegramBotMenu.ResolveCommand(text);
 
-        var command = ParseCommand(text) ?? TelegramBotMenu.ResolveCommand(text);
         if (command is not null)
         {
-            await HandleCommandAsync(chat.Id, from, command, cancellationToken);
+            await HandleCommandAsync(chat.Id, from, command, isAdmin, cancellationToken);
+            return;
+        }
+
+        if (isAdmin && AdminPromoStates.TryGetValue(from.Id, out var promoState))
+        {
+            if (promoState.IsExpired(DateTime.UtcNow))
+            {
+                AdminPromoStates.TryRemove(from.Id, out _);
+                await SendAdminAsync(
+                    chat.Id,
+                    "⏳ Час очікування створення промокоду вичерпано. Скористайтеся меню внизу.",
+                    cancellationToken);
+                return;
+            }
+
+            await HandleAdminPromoCreationInputAsync(chat.Id, from, promoState, text, cancellationToken);
             return;
         }
 
@@ -71,6 +101,12 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
+        if (isAdmin)
+        {
+            await SendAdminAsync(chat.Id, "Оберіть розділ адмін-панелі в меню внизу.", cancellationToken);
+            return;
+        }
+
         await SendMenuHintAsync(chat.Id, cancellationToken);
     }
 
@@ -78,10 +114,58 @@ public sealed class TelegramBotCommandHandler(
         long chatId,
         TelegramUser user,
         string command,
+        bool isAdmin,
         CancellationToken cancellationToken)
     {
-        // Завжди скидаємо будь-який незавершений стан виведення при переході в інший розділ меню або команду
+        // Завжди скидаємо будь-які незавершені стани при переході в інший розділ меню або команду
         WithdrawalStates.TryRemove(user.Id, out _);
+        AdminPromoStates.TryRemove(user.Id, out _);
+
+        if (command is "/myid" or "/id")
+        {
+            var replyMarkup = isAdmin ? TelegramBotMenu.AdminReplyMarkup : TelegramBotMenu.ReplyMarkup;
+            await telegramBotClient.SendMessageAsync(
+                chatId,
+                $"Ваш Telegram ID: <code>{user.Id}</code>",
+                replyMarkup,
+                cancellationToken);
+            return;
+        }
+
+        if (isAdmin)
+        {
+            switch (command)
+            {
+                case "/start":
+                case "/admin":
+                    await StartAdminAsync(chatId, user, cancellationToken);
+                    return;
+                case "/admin_orders":
+                case "/orders":
+                    await SendAdminOrdersAsync(chatId, cancellationToken);
+                    return;
+                case "/admin_referrals":
+                case "/stats":
+                    await SendAdminReferralsAsync(chatId, cancellationToken);
+                    return;
+                case "/admin_payouts":
+                case "/payouts":
+                    await SendAdminPayoutsAsync(chatId, cancellationToken);
+                    return;
+                case "/admin_promos":
+                    await SendAdminPromoCodesAsync(chatId, cancellationToken);
+                    return;
+                case "/admin_create_promo":
+                    await StartAdminCreatePromoAsync(chatId, user.Id, cancellationToken);
+                    return;
+                case "/cancel":
+                    await SendAdminAsync(chatId, "Дію скасовано.", cancellationToken);
+                    return;
+                default:
+                    await SendAdminAsync(chatId, "Оберіть розділ адмін-панелі в меню внизу.", cancellationToken);
+                    return;
+            }
+        }
 
         switch (command)
         {
@@ -422,6 +506,380 @@ public sealed class TelegramBotCommandHandler(
         await SendAsync(chatId, builder.ToString(), cancellationToken);
     }
 
+    private async Task StartAdminAsync(long chatId, TelegramUser user, CancellationToken cancellationToken)
+    {
+        var safeName = Html(BuildPartnerName(user));
+        var text = $"""
+            🛡 <b>Адмін-панель Jingle Decor</b>
+            Вітаю, <b>{safeName}</b>! Ви увійшли як адміністратор.
+
+            • <b>{TelegramBotMenu.AdminOrdersButton}</b> — всі замовлення по позиціях, суми, промокоди та реферали
+            • <b>{TelegramBotMenu.AdminReferralsButton}</b> — хто скільки людей привів та баланс рефералів
+            • <b>{TelegramBotMenu.AdminPayoutsButton}</b> — заявки на виведення коштів (підтвердження в 1 клік)
+            • <b>{TelegramBotMenu.AdminPromosButton}</b> — активні промокоди та ліміти
+            • <b>{TelegramBotMenu.AdminCreatePromoButton}</b> — створити промокод на знижку для рідних/знайомих
+
+            Усі нові замовлення та заявки на виплату також приходять сюди автоматично.
+            """;
+
+        await SendAdminAsync(chatId, text, cancellationToken);
+    }
+
+    private async Task SendAdminOrdersAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var orders = await referralService.GetRecentOrdersForAdminBotAsync(10, cancellationToken);
+        if (orders.Count == 0)
+        {
+            await SendAdminAsync(chatId, "Замовлень поки немає.", cancellationToken);
+            return;
+        }
+
+        var builder = new StringBuilder("📦 <b>Останні замовлення (детально по позиціях):</b>\n");
+        foreach (var order in orders)
+        {
+            builder.AppendLine();
+            builder.AppendLine("━━━━━━━━━━━━━━━━━━━━");
+            builder.AppendLine(TelegramBotClient.FormatAdminOrderMessage(order, isNewOrderNotification: false));
+            builder.AppendLine($"📌 Статус: <b>{FormatOrderStatus(order.OrderStatus)}</b> • {order.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
+        }
+
+        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+    }
+
+    private async Task SendAdminReferralsAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var partners = await referralService.GetAllPartnersAsync(cancellationToken);
+        if (partners.Count == 0)
+        {
+            await SendAdminAsync(chatId, "Зареєстрованих рефералів поки немає.", cancellationToken);
+            return;
+        }
+
+        var builder = new StringBuilder($"🤝 <b>Реферали ({partners.Count}):</b>\n");
+        foreach (var partner in partners)
+        {
+            var cardInfo = !string.IsNullOrWhiteSpace(partner.CardNumber)
+                ? $"<code>{Html(partner.CardNumber)}</code>"
+                : "<i>не вказана</i>";
+
+            builder.AppendLine();
+            builder.AppendLine($"👤 <b>{Html(partner.Name)}</b> • код: <code>{Html(partner.ReferralCode)}</code> ({Percent(partner.CommissionPercent)}%)");
+            builder.AppendLine($"👥 Запрошено замовлень: <b>{partner.TotalOrders}</b> (доставлено: <b>{partner.DeliveredOrders}</b>)");
+            builder.AppendLine($"📈 Оборот: <b>{Money(partner.TotalTurnover)} грн</b>");
+            builder.AppendLine($"💰 Доступно: <b>{Money(partner.AvailableBalance)} грн</b> • В холді: {Money(partner.PendingBalance)} грн");
+            builder.Append($"💳 Картка: {cardInfo}");
+            builder.AppendLine();
+        }
+
+        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+    }
+
+    private async Task SendAdminPayoutsAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var pendingPayouts = await referralService.GetAllPayoutRequestsAsync(PayoutRequestStatus.Pending, cancellationToken);
+        if (pendingPayouts.Count > 0)
+        {
+            await SendAdminAsync(chatId, $"💸 <b>Активні заявки на виплату ({pendingPayouts.Count}):</b>", cancellationToken);
+            foreach (var payout in pendingPayouts.Take(10))
+            {
+                var text = TelegramBotClient.FormatAdminPayoutRequestMessage(payout);
+                var markup = TelegramBotClient.CreatePayoutApprovalInlineMarkup(payout.Id);
+                await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, text, markup, cancellationToken);
+            }
+            return;
+        }
+
+        var allPayouts = await referralService.GetAllPayoutRequestsAsync(null, cancellationToken);
+        if (allPayouts.Count == 0)
+        {
+            await SendAdminAsync(chatId, "Заявок на виплату поки немає.", cancellationToken);
+            return;
+        }
+
+        var builder = new StringBuilder("💸 <b>Активних заявок немає. Останні оброблені виплати:</b>\n");
+        foreach (var payout in allPayouts.Take(10))
+        {
+            builder.AppendLine();
+            builder.AppendLine($"• <b>{Html(payout.PartnerName)}</b> (<code>{Html(payout.PartnerReferralCode)}</code>) — <b>{Money(payout.Amount)} грн</b>");
+            builder.AppendLine($"  Картка: <code>{Html(payout.CardNumber)}</code> • Статус: <b>{FormatPayoutStatus(payout.Status)}</b>");
+            builder.Append($"  Дата: {payout.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
+        }
+
+        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+    }
+
+    private async Task SendAdminPromoCodesAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var promos = await referralService.GetAllPromoCodesAsync(cancellationToken);
+        if (promos.Count == 0)
+        {
+            await SendAdminAsync(
+                chatId,
+                $"Активних промокодів поки немає.\nНатисніть <b>«{TelegramBotMenu.AdminCreatePromoButton}»</b>, щоб створити промокод на знижку.",
+                cancellationToken);
+            return;
+        }
+
+        var builder = new StringBuilder($"🎟 <b>Промокоди ({promos.Count}):</b>\n");
+        var activeButtons = new List<IReadOnlyList<TelegramInlineKeyboardButton>>();
+
+        foreach (var promo in promos.Take(15))
+        {
+            var limitText = promo.MaxUses.HasValue && promo.MaxUses.Value > 0
+                ? $"{promo.UsedCount} / {promo.MaxUses.Value}"
+                : $"{promo.UsedCount} / ∞ (безліміт)";
+            var statusIcon = promo.IsActive ? "🟢 Активний" : "🔴 Вимкнений";
+
+            builder.AppendLine();
+            builder.AppendLine($"• <code>{Html(promo.Code)}</code> — знижка <b>-{Percent(promo.DiscountPercent)}%</b> ({statusIcon})");
+            builder.AppendLine($"  Використано: <b>{limitText}</b>");
+            builder.Append($"  Посилання: <code>{Html(BuildReferralLink(promo.Code))}</code>");
+            builder.AppendLine();
+
+            if (promo.IsActive && activeButtons.Count < 8)
+            {
+                activeButtons.Add(
+                [
+                    new TelegramInlineKeyboardButton($"🛑 Вимкнути {promo.Code}", $"promo_off:{promo.Id:N}")
+                ]);
+            }
+        }
+
+        if (activeButtons.Count > 0)
+        {
+            await telegramBotClient.SendMessageWithInlineKeyboardAsync(
+                chatId,
+                builder.ToString(),
+                new TelegramInlineKeyboardMarkup(activeButtons),
+                cancellationToken);
+            return;
+        }
+
+        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+    }
+
+    private async Task StartAdminCreatePromoAsync(long chatId, long adminTelegramUserId, CancellationToken cancellationToken)
+    {
+        CleanupExpiredStates();
+        AdminPromoStates[adminTelegramUserId] = new AdminPromoCreationState();
+
+        await SendAdminAsync(
+            chatId,
+            "🎟 <b>Створення промокоду для рідних/знайомих (Крок 1 з 3)</b>\n\nВведіть назву промокоду (наприклад: <code>FAMILY15</code>, <code>BRO20</code>) або напишіть <code>авто</code> для автоматичної генерації (чи /cancel):",
+            cancellationToken);
+    }
+
+    private async Task HandleAdminPromoCreationInputAsync(
+        long chatId,
+        TelegramUser user,
+        AdminPromoCreationState state,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        if (!state.CodeStepCompleted)
+        {
+            var rawCode = text.Trim();
+            if (string.Equals(rawCode, "авто", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawCode, "auto", StringComparison.OrdinalIgnoreCase))
+            {
+                state.Code = null;
+                state.CodeStepCompleted = true;
+                state.Touch();
+            }
+            else
+            {
+                var normalized = rawCode.ToUpperInvariant();
+                if (normalized.Length is < 2 or > 32 || !normalized.All(c => char.IsLetterOrDigit(c) || c is '_' or '-'))
+                {
+                    state.Touch();
+                    await SendAdminAsync(
+                        chatId,
+                        "Код має містити від 2 до 32 символів (латинські літери, цифри, <code>_</code> або <code>-</code>), або напишіть <code>авто</code> (чи /cancel).",
+                        cancellationToken);
+                    return;
+                }
+
+                state.Code = normalized;
+                state.CodeStepCompleted = true;
+                state.Touch();
+            }
+
+            await SendAdminAsync(
+                chatId,
+                "🎟 <b>Крок 2 з 3: Відсоток знижки</b>\n\nВведіть відсоток знижки для покупця (від <code>1</code> до <code>99</code>, наприклад: <code>15</code>) або /cancel:",
+                cancellationToken);
+            return;
+        }
+
+        if (state.DiscountPercent is null)
+        {
+            var cleanedPercent = text.Replace("%", string.Empty).Trim();
+            if (!TryParseAmount(cleanedPercent, out var percent) || percent <= 0m || percent >= 100m)
+            {
+                state.Touch();
+                await SendAdminAsync(
+                    chatId,
+                    "Некоректний відсоток. Введіть число від <code>1</code> до <code>99</code> (наприклад: <code>15</code>) або /cancel:",
+                    cancellationToken);
+                return;
+            }
+
+            state.DiscountPercent = Math.Round(percent, 2, MidpointRounding.AwayFromZero);
+            state.Touch();
+
+            await SendAdminAsync(
+                chatId,
+                "🎟 <b>Крок 3 з 3: Ліміт використань</b>\n\nВведіть максимальну кількість замовлень за цим промокодом (наприклад: <code>1</code> — одноразовий, <code>5</code> — на 5 замовлень, або <code>0</code> — безлімітний):",
+                cancellationToken);
+            return;
+        }
+
+        if (!int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxUses) || maxUses < 0 || maxUses > 1_000_000)
+        {
+            state.Touch();
+            await SendAdminAsync(
+                chatId,
+                "Введіть ціле число від <code>0</code> (безліміт) до <code>1000000</code> (наприклад: <code>1</code> або <code>5</code>) чи /cancel:",
+                cancellationToken);
+            return;
+        }
+
+        // Атомарно видаляємо стан ПЕРЕД збереженням у БД (захист від double-submit)
+        if (!AdminPromoStates.TryRemove(user.Id, out _))
+        {
+            return;
+        }
+
+        try
+        {
+            var created = await referralService.CreatePromoCodeAsync(
+                new CreatePromoCodeRequest
+                {
+                    Code = state.Code,
+                    DiscountPercent = state.DiscountPercent.Value,
+                    MaxUses = maxUses == 0 ? null : maxUses,
+                    CreatedByTelegramUserId = user.Id
+                },
+                cancellationToken);
+
+            var limitLabel = created.MaxUses.HasValue
+                ? $"{created.MaxUses.Value} замовлень"
+                : "Безліміт";
+            var link = Html(BuildReferralLink(created.Code));
+
+            await SendAdminAsync(
+                chatId,
+                $"""
+                ✅ <b>Промокод успішно створено!</b>
+
+                🎟 Код: <code>{Html(created.Code)}</code> (натисніть для копіювання)
+                📉 Знижка покупцю: <b>-{Percent(created.DiscountPercent)}%</b>
+                🔢 Ліміт використань: <b>{limitLabel}</b>
+
+                🔗 Або пряме посилання зі знижкою:
+                <code>{link}</code>
+                """,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Не вдалося створити промокод для адміна {TelegramUserId}.", user.Id);
+            await SendAdminAsync(
+                chatId,
+                $"❌ Не вдалося створити промокод: {Html(ex.Message)}",
+                cancellationToken);
+        }
+    }
+
+    private async Task HandleCallbackQueryAsync(
+        TelegramCallbackQuery callbackQuery,
+        TelegramUser user,
+        string data,
+        CancellationToken cancellationToken)
+    {
+        if (!TelegramBotMenu.IsAdmin(configuration, user.Id))
+        {
+            await telegramBotClient.AnswerCallbackQueryAsync(
+                callbackQuery.Id,
+                "⛔ Доступ лише для адміністраторів.",
+                cancellationToken);
+            return;
+        }
+
+        var chatId = callbackQuery.Message?.Chat?.Id ?? user.Id;
+
+        if (data.StartsWith("payout_ok:", StringComparison.OrdinalIgnoreCase)
+            || data.StartsWith("payout_no:", StringComparison.OrdinalIgnoreCase))
+        {
+            var approve = data.StartsWith("payout_ok:", StringComparison.OrdinalIgnoreCase);
+            var rawId = data[(data.IndexOf(':') + 1)..];
+            if (!Guid.TryParse(rawId, out var payoutId))
+            {
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний ID заявки.", cancellationToken);
+                return;
+            }
+
+            try
+            {
+                var updated = await referralService.ProcessPayoutRequestAsync(
+                    payoutId,
+                    new UpdatePayoutStatusRequest
+                    {
+                        Status = approve ? PayoutRequestStatus.Completed : PayoutRequestStatus.Rejected,
+                        AdminComment = approve ? "Підтверджено адміном у Telegram" : "Відхилено адміном у Telegram"
+                    },
+                    cancellationToken);
+
+                await telegramBotClient.AnswerCallbackQueryAsync(
+                    callbackQuery.Id,
+                    approve ? "✅ Виплату підтверджено!" : "❌ Заявку відхилено.",
+                    cancellationToken);
+
+                var statusMsg = approve
+                    ? $"✅ Виплату <b>{Money(updated.Amount)} грн</b> для <b>{Html(updated.PartnerName)}</b> (<code>{Html(updated.PartnerReferralCode)}</code>) позначено як <b>ВИПЛАЧЕНО</b>."
+                    : $"❌ Заявку на <b>{Money(updated.Amount)} грн</b> для <b>{Html(updated.PartnerName)}</b> (<code>{Html(updated.PartnerReferralCode)}</code>) <b>ВІДХИЛЕНО</b> (кошти повернуто на баланс реферала).";
+
+                await SendAdminAsync(chatId, statusMsg, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Не вдалося обробити callback виплати {PayoutId}.", payoutId);
+                await telegramBotClient.AnswerCallbackQueryAsync(
+                    callbackQuery.Id,
+                    $"⚠️ {ex.Message}",
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        if (data.StartsWith("promo_off:", StringComparison.OrdinalIgnoreCase))
+        {
+            var rawId = data[(data.IndexOf(':') + 1)..];
+            if (!Guid.TryParse(rawId, out var promoId))
+            {
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний ID промокоду.", cancellationToken);
+                return;
+            }
+
+            var deactivated = await referralService.DeactivatePromoCodeAsync(promoId, cancellationToken);
+            await telegramBotClient.AnswerCallbackQueryAsync(
+                callbackQuery.Id,
+                deactivated ? "🛑 Промокод вимкнено." : "Промокод не знайдено.",
+                cancellationToken);
+
+            if (deactivated)
+            {
+                await SendAdminAsync(chatId, "🛑 Промокод успішно вимкнено.", cancellationToken);
+            }
+        }
+    }
+
+    private Task<bool> SendAdminAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        return telegramBotClient.SendMessageAsync(chatId, text, TelegramBotMenu.AdminReplyMarkup, cancellationToken);
+    }
+
     private async Task SendMenuHintAsync(long chatId, CancellationToken cancellationToken)
     {
         await SendAsync(chatId, "Скористайтеся меню внизу.", cancellationToken);
@@ -534,32 +992,57 @@ public sealed class TelegramBotCommandHandler(
 
     private static void CleanupExpiredStates()
     {
-        if (WithdrawalStates.IsEmpty)
-        {
-            return;
-        }
-
         var now = DateTime.UtcNow;
-        foreach (var pair in WithdrawalStates)
+
+        if (!WithdrawalStates.IsEmpty)
         {
-            if (pair.Value.IsExpired(now))
+            foreach (var pair in WithdrawalStates)
             {
-                WithdrawalStates.TryRemove(pair.Key, out _);
+                if (pair.Value.IsExpired(now))
+                {
+                    WithdrawalStates.TryRemove(pair.Key, out _);
+                }
+            }
+
+            if (WithdrawalStates.Count > MaxActiveWithdrawalStates)
+            {
+                var excessCount = WithdrawalStates.Count - MaxActiveWithdrawalStates;
+                var oldestKeys = WithdrawalStates
+                    .OrderBy(pair => pair.Value.UpdatedAtUtc)
+                    .Take(excessCount)
+                    .Select(pair => pair.Key)
+                    .ToArray();
+
+                foreach (var key in oldestKeys)
+                {
+                    WithdrawalStates.TryRemove(key, out _);
+                }
             }
         }
 
-        if (WithdrawalStates.Count > MaxActiveWithdrawalStates)
+        if (!AdminPromoStates.IsEmpty)
         {
-            var excessCount = WithdrawalStates.Count - MaxActiveWithdrawalStates;
-            var oldestKeys = WithdrawalStates
-                .OrderBy(pair => pair.Value.UpdatedAtUtc)
-                .Take(excessCount)
-                .Select(pair => pair.Key)
-                .ToArray();
-
-            foreach (var key in oldestKeys)
+            foreach (var pair in AdminPromoStates)
             {
-                WithdrawalStates.TryRemove(key, out _);
+                if (pair.Value.IsExpired(now))
+                {
+                    AdminPromoStates.TryRemove(pair.Key, out _);
+                }
+            }
+
+            if (AdminPromoStates.Count > MaxActiveWithdrawalStates)
+            {
+                var excessCount = AdminPromoStates.Count - MaxActiveWithdrawalStates;
+                var oldestKeys = AdminPromoStates
+                    .OrderBy(pair => pair.Value.UpdatedAtUtc)
+                    .Take(excessCount)
+                    .Select(pair => pair.Key)
+                    .ToArray();
+
+                foreach (var key in oldestKeys)
+                {
+                    AdminPromoStates.TryRemove(key, out _);
+                }
             }
         }
     }
@@ -657,6 +1140,18 @@ public sealed class TelegramBotCommandHandler(
         public decimal? Amount { get; set; }
         public string? SavedCardNumber { get; set; }
         public bool AwaitingSavedCardConfirmation { get; set; }
+        public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
+
+        public void Touch() => UpdatedAtUtc = DateTime.UtcNow;
+
+        public bool IsExpired(DateTime nowUtc) => nowUtc - UpdatedAtUtc > WithdrawalStateTtl;
+    }
+
+    private sealed class AdminPromoCreationState
+    {
+        public string? Code { get; set; }
+        public bool CodeStepCompleted { get; set; }
+        public decimal? DiscountPercent { get; set; }
         public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
 
         public void Touch() => UpdatedAtUtc = DateTime.UtcNow;

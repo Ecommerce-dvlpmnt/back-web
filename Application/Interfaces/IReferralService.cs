@@ -82,4 +82,23 @@ public interface IReferralService
         Guid payoutId,
         UpdatePayoutStatusRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<PromoCodeResponse> CreatePromoCodeAsync(
+        CreatePromoCodeRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    Task<IReadOnlyList<PromoCodeResponse>> GetAllPromoCodesAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<PromoCodeResponse>>(Array.Empty<PromoCodeResponse>());
+
+    Task<bool> DeactivatePromoCodeAsync(
+        Guid promoCodeId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
+
+    Task<IReadOnlyList<AdminBotOrderNotificationDto>> GetRecentOrdersForAdminBotAsync(
+        int limit = 10,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AdminBotOrderNotificationDto>>(Array.Empty<AdminBotOrderNotificationDto>());
 }

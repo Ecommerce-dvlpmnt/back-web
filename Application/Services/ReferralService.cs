@@ -35,20 +35,54 @@ public sealed class ReferralService(
     {
         ArgumentNullException.ThrowIfNull(order);
 
-        var partner = await FindPartnerByCodeAsync(referralCode, cancellationToken);
-        if (partner is null)
+        var normalized = referralCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(normalized))
         {
             return false;
         }
 
-        var reward = Math.Round(
-            order.TotalPrice * partner.CommissionPercent / 100m,
+        var partner = await FindPartnerByCodeAsync(normalized, cancellationToken);
+        if (partner is not null)
+        {
+            var reward = Math.Round(
+                order.TotalPrice * partner.CommissionPercent / 100m,
+                2,
+                MidpointRounding.AwayFromZero);
+
+            order.ReferrerId = partner.Id;
+            order.ReferralRewardAmount = reward;
+            order.ReferralRewardStatus = ReferralRewardStatus.Pending;
+            return true;
+        }
+
+        var promo = dbContext.Database.IsRelational()
+            ? await dbContext.PromoCodes
+                .FromSqlInterpolated($"SELECT * FROM \"PromoCodes\" WHERE UPPER(\"Code\") = {normalized} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken)
+            : await dbContext.PromoCodes
+                .FirstOrDefaultAsync(p => p.Code.ToUpper() == normalized, cancellationToken);
+
+        if (promo is null || !promo.IsActive || (promo.MaxUses.HasValue && promo.MaxUses.Value > 0 && promo.UsedCount >= promo.MaxUses.Value))
+        {
+            return false;
+        }
+
+        var discount = Math.Round(
+            order.TotalPrice * promo.DiscountPercent / 100m,
             2,
             MidpointRounding.AwayFromZero);
 
-        order.ReferrerId = partner.Id;
-        order.ReferralRewardAmount = reward;
-        order.ReferralRewardStatus = ReferralRewardStatus.Pending;
+        order.PromoCodeId = promo.Id;
+        order.DiscountAmount = discount;
+        order.TotalPrice = Math.Max(0m, order.TotalPrice - discount);
+        order.TotalProfit -= discount;
+
+        promo.UsedCount += 1;
+        if (promo.MaxUses.HasValue && promo.MaxUses.Value > 0 && promo.UsedCount >= promo.MaxUses.Value)
+        {
+            promo.IsActive = false;
+        }
+
         return true;
     }
 
@@ -461,13 +495,33 @@ public sealed class ReferralService(
         string? referralCode,
         CancellationToken cancellationToken = default)
     {
-        var partner = await FindPartnerByCodeAsync(referralCode, cancellationToken);
-        if (partner is null)
+        var normalized = referralCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(normalized))
         {
             return new ReferralCodeValidationResponse(false, null, null);
         }
 
-        return new ReferralCodeValidationResponse(true, partner.ReferralCode, partner.Name);
+        var partner = await FindPartnerByCodeAsync(normalized, cancellationToken);
+        if (partner is not null)
+        {
+            return new ReferralCodeValidationResponse(true, partner.ReferralCode, partner.Name, 0m, false);
+        }
+
+        var promo = await dbContext.PromoCodes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Code.ToUpper() == normalized, cancellationToken);
+
+        if (promo is not null && promo.IsActive && (!promo.MaxUses.HasValue || promo.MaxUses.Value <= 0 || promo.UsedCount < promo.MaxUses.Value))
+        {
+            return new ReferralCodeValidationResponse(
+                true,
+                promo.Code,
+                $"Промокод -{promo.DiscountPercent:0.##}%",
+                promo.DiscountPercent,
+                true);
+        }
+
+        return new ReferralCodeValidationResponse(false, null, null);
     }
 
     public async Task<BotPartnerProfileResponse?> GetBotPartnerProfileAsync(
@@ -762,6 +816,25 @@ public sealed class ReferralService(
                 await transaction.CommitAsync(cancellationToken);
             }
 
+            if (telegramBotClient is not null)
+            {
+                _ = telegramBotClient.SendAdminPayoutRequestNotificationAsync(
+                    new AdminPayoutResponse(
+                        payout.Id,
+                        partner.Id,
+                        partner.TelegramUserId,
+                        partner.Name,
+                        partner.ReferralCode,
+                        payout.Amount,
+                        payout.CardNumber,
+                        payout.CardHolderName,
+                        payout.Status,
+                        payout.AdminComment,
+                        payout.CreatedAt,
+                        payout.ProcessedAt),
+                    CancellationToken.None);
+            }
+
             logger?.LogInformation(
                 "Партнер {PartnerId} створив заявку на виведення {Amount} грн на картку {Card}.",
                 partner.Id,
@@ -955,6 +1028,143 @@ public sealed class ReferralService(
         }
     }
 
+    public async Task<PromoCodeResponse> CreatePromoCodeAsync(
+        CreatePromoCodeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.DiscountPercent <= 0m || request.DiscountPercent >= 100m)
+        {
+            throw new ArgumentException("Відсоток знижки має бути від 0.01% до 99.99%.", nameof(request));
+        }
+
+        var code = request.Code?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            code = "PROMO" + await GenerateUniqueReferralCodeAsync(cancellationToken);
+        }
+        else
+        {
+            var existsInReferrals = await dbContext.Partners
+                .AnyAsync(p => p.ReferralCode.ToUpper() == code, cancellationToken);
+            if (existsInReferrals)
+            {
+                throw new InvalidOperationException($"Код '{code}' вже використовується як реферальний код.");
+            }
+
+            var existsInPromos = await dbContext.PromoCodes
+                .AnyAsync(p => p.Code.ToUpper() == code, cancellationToken);
+            if (existsInPromos)
+            {
+                throw new InvalidOperationException($"Промокод '{code}' вже існує.");
+            }
+        }
+
+        var maxUses = request.MaxUses is > 0 ? request.MaxUses : null;
+
+        var promo = new PromoCode
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            DiscountPercent = Math.Round(request.DiscountPercent, 2, MidpointRounding.AwayFromZero),
+            MaxUses = maxUses,
+            UsedCount = 0,
+            IsActive = true,
+            CreatedByTelegramUserId = request.CreatedByTelegramUserId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        dbContext.PromoCodes.Add(promo);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return MapToPromoCodeResponse(promo);
+    }
+
+    public async Task<IReadOnlyList<PromoCodeResponse>> GetAllPromoCodesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await dbContext.PromoCodes
+            .AsNoTracking()
+            .OrderByDescending(p => p.IsActive)
+            .ThenByDescending(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return list.Select(MapToPromoCodeResponse).ToArray();
+    }
+
+    public async Task<bool> DeactivatePromoCodeAsync(
+        Guid promoCodeId,
+        CancellationToken cancellationToken = default)
+    {
+        var promo = await dbContext.PromoCodes
+            .FirstOrDefaultAsync(p => p.Id == promoCodeId, cancellationToken);
+
+        if (promo is null)
+        {
+            return false;
+        }
+
+        promo.IsActive = false;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<AdminBotOrderNotificationDto>> GetRecentOrdersForAdminBotAsync(
+        int limit = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 50);
+
+        var orders = await dbContext.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Referrer)
+            .Include(o => o.PromoCode)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(clampedLimit)
+            .ToListAsync(cancellationToken);
+
+        return orders
+            .Select(o => new AdminBotOrderNotificationDto(
+                o.Id,
+                o.OrderNumber,
+                o.PublicId,
+                $"{o.CustomerFirstName} {o.CustomerLastName}".Trim(),
+                o.CustomerPhone,
+                o.DeliveryCityName,
+                o.DeliveryWarehouseName,
+                o.PaymentMethod,
+                o.OrderStatus,
+                o.TotalPrice,
+                o.DiscountAmount,
+                o.PromoCode?.Code,
+                o.PromoCode?.DiscountPercent,
+                o.Referrer?.Name,
+                o.Referrer?.ReferralCode,
+                o.ReferralRewardAmount,
+                o.CreatedAt,
+                o.Items
+                    .Select(i => new AdminBotOrderItemDto(
+                        i.ProductNameSnapshot,
+                        i.Quantity,
+                        i.UnitPrice,
+                        i.UnitPrice * i.Quantity))
+                    .ToArray()))
+            .ToArray();
+    }
+
+    private static PromoCodeResponse MapToPromoCodeResponse(PromoCode promo) =>
+        new(
+            promo.Id,
+            promo.Code,
+            promo.DiscountPercent,
+            promo.MaxUses,
+            promo.UsedCount,
+            promo.IsActive,
+            promo.CreatedByTelegramUserId,
+            promo.CreatedAt);
+
     private static string MaskCardNumber(string card)
     {
         if (string.IsNullOrWhiteSpace(card) || card.Length < 16)
@@ -978,7 +1188,9 @@ public sealed class ReferralService(
 
             var candidate = new string(chars);
             var exists = await dbContext.Partners
-                .AnyAsync(p => p.ReferralCode.ToUpper() == candidate, cancellationToken);
+                .AnyAsync(p => p.ReferralCode.ToUpper() == candidate, cancellationToken)
+                || await dbContext.PromoCodes
+                    .AnyAsync(p => p.Code.ToUpper() == candidate, cancellationToken);
 
             if (!exists)
             {

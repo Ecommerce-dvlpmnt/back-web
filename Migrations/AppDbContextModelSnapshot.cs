@@ -442,6 +442,13 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("DeliveryWarehouseRef");
 
+                    b.Property<decimal>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("DiscountAmount");
+
                     b.Property<string>("ExternalPaymentId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -476,6 +483,10 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("payment_status")
                         .HasColumnName("PaymentStatus")
                         .HasDefaultValueSql("'Pending'");
+
+                    b.Property<Guid?>("PromoCodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("PromoCodeId");
 
                     b.Property<string>("PublicId")
                         .IsRequired()
@@ -557,6 +568,9 @@ namespace EcommerceBackend.Migrations
                     b.HasIndex("OrderStatus")
                         .HasDatabaseName("IX_Orders_Active")
                         .HasFilter("\"OrderStatus\" IN ('New','Confirmed','Packed')");
+
+                    b.HasIndex("PromoCodeId")
+                        .HasDatabaseName("IX_Orders_PromoCodeId");
 
                     b.HasIndex("PublicId")
                         .IsUnique()
@@ -1119,6 +1133,60 @@ namespace EcommerceBackend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PromoCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("Code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<long?>("CreatedByTelegramUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CreatedByTelegramUserId");
+
+                    b.Property<decimal>("DiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("DiscountPercent");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
+                    b.Property<int?>("MaxUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("MaxUses");
+
+                    b.Property<int>("UsedCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("UsedCount");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("PromoCodes_Code_key");
+
+                    b.ToTable("PromoCodes", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Review", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1295,6 +1363,12 @@ namespace EcommerceBackend.Migrations
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("Orders_CampaignId_fkey");
 
+                    b.HasOne("EcommerceBackend.Domain.Entities.PromoCode", "PromoCode")
+                        .WithMany("Orders")
+                        .HasForeignKey("PromoCodeId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("Orders_PromoCodeId_fkey");
+
                     b.HasOne("EcommerceBackend.Domain.Entities.Partner", "Referrer")
                         .WithMany("Orders")
                         .HasForeignKey("ReferrerId")
@@ -1302,6 +1376,8 @@ namespace EcommerceBackend.Migrations
                         .HasConstraintName("Orders_ReferrerId_fkey");
 
                     b.Navigation("Campaign");
+
+                    b.Navigation("PromoCode");
 
                     b.Navigation("Referrer");
                 });
@@ -1516,6 +1592,11 @@ namespace EcommerceBackend.Migrations
                     b.Navigation("RelatedLinks");
 
                     b.Navigation("Reviews");
+                });
+
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.PromoCode", b =>
+                {
+                    b.Navigation("Orders");
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Supplier", b =>
