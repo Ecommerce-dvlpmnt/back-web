@@ -6,6 +6,8 @@ public class Partner
     public long TelegramUserId { get; set; }
     public string Name { get; set; } = null!;
     public string ReferralCode { get; set; } = null!;
+    public string? CardNumber { get; set; }
+    public string? CardHolderName { get; set; }
     public decimal CommissionPercent { get; set; } = 5.0m;
     public decimal TotalEarned { get; set; }
     public DateTime CreatedAt { get; set; }

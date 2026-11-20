@@ -54,7 +54,7 @@ public class AppDbContext : DbContext
     private static void ConfigurePartnerPayoutRequests(ModelBuilder b)
     {
         var e = b.Entity<PartnerPayoutRequest>();
-        e.ToTable("PartnerPayoutRequests");
+        e.ToTable("ReferralPayoutRequests");
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.PartnerId).HasColumnName("PartnerId").IsRequired();
@@ -79,12 +79,14 @@ public class AppDbContext : DbContext
     private static void ConfigurePartners(ModelBuilder b)
     {
         var e = b.Entity<Partner>();
-        e.ToTable("Partners");
+        e.ToTable("Referrals");
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("Id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.TelegramUserId).HasColumnName("TelegramUserId").IsRequired();
         e.Property(x => x.Name).HasColumnName("Name").HasMaxLength(100).IsRequired();
         e.Property(x => x.ReferralCode).HasColumnName("ReferralCode").HasMaxLength(32).IsRequired();
+        e.Property(x => x.CardNumber).HasColumnName("CardNumber").HasMaxLength(30);
+        e.Property(x => x.CardHolderName).HasColumnName("CardHolderName").HasMaxLength(150);
         e.Property(x => x.CommissionPercent).HasColumnName("CommissionPercent").HasPrecision(5, 2).HasDefaultValue(5.0m);
         e.Property(x => x.TotalEarned).HasColumnName("TotalEarned").HasPrecision(12, 2).HasDefaultValue(0m);
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
@@ -331,7 +333,6 @@ public class AppDbContext : DbContext
         e.Property(x => x.CampaignId).HasColumnName("CampaignId");
         e.Property(x => x.ReferrerId).HasColumnName("ReferrerId");
         e.Property(x => x.ReferralRewardAmount).HasColumnName("ReferralRewardAmount").HasPrecision(10, 2).HasDefaultValue(0m);
-        e.Property(x => x.IsReferralRewardPaid).HasColumnName("IsReferralRewardPaid").HasDefaultValue(false);
         e.Property(x => x.ReferralRewardStatus).HasColumnName("ReferralRewardStatus").HasMaxLength(20).HasConversion<string>().HasDefaultValue(ReferralRewardStatus.None);
         e.Property(x => x.AdminComment).HasColumnName("AdminComment");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");

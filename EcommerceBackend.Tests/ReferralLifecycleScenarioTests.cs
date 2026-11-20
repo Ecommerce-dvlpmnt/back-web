@@ -94,9 +94,10 @@ public sealed class ReferralLifecycleScenarioTests
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "4149 4999 1234 5678"));
         Assert.Contains("Заявку на виведення 350.00 грн створено", telegramClient.LastMessageText);
 
-        // Баланс списався під заявку:
+        // Баланс списався під заявку, а картка збереглася у профілі реферала:
         var statsAfterWithdraw = system.GetStats(telegramUserId);
         Assert.Equal(0m, statsAfterWithdraw.AvailableBalance);
+        Assert.Equal("4149499912345678", partner.CardNumber);
         Assert.Single(system.PayoutRequests);
 
         var payout = system.PayoutRequests[0];
@@ -238,8 +239,7 @@ public sealed class ReferralLifecycleScenarioTests
                 OrderStatus = OrderStatus.New,
                 ReferrerId = partner.Id,
                 ReferralRewardAmount = reward,
-                ReferralRewardStatus = ReferralRewardStatus.Pending,
-                IsReferralRewardPaid = false
+                ReferralRewardStatus = ReferralRewardStatus.Pending
             };
             _orders.Add(order);
             return order;
@@ -249,7 +249,6 @@ public sealed class ReferralLifecycleScenarioTests
         {
             order.OrderStatus = OrderStatus.Delivered;
             order.ReferralRewardStatus = ReferralRewardStatus.Paid;
-            order.IsReferralRewardPaid = true;
 
             var partner = _partners.First(p => p.Id == order.ReferrerId);
             partner.TotalEarned += order.ReferralRewardAmount;
@@ -259,7 +258,6 @@ public sealed class ReferralLifecycleScenarioTests
         {
             order.OrderStatus = OrderStatus.Refused;
             order.ReferralRewardStatus = ReferralRewardStatus.Cancelled;
-            order.IsReferralRewardPaid = false;
         }
 
         public void ApprovePayout(Guid payoutId)
@@ -361,6 +359,8 @@ public sealed class ReferralLifecycleScenarioTests
         public Task<BotPayoutResponse> RequestPayoutAsync(long telegramUserId, BotPayoutRequestDto request, CancellationToken cancellationToken = default)
         {
             var partner = GetProfile(telegramUserId) ?? throw new InvalidOperationException("Not found");
+            partner.CardNumber = request.CardNumber;
+            partner.CardHolderName = request.CardHolderName;
             var payout = new PartnerPayoutRequest
             {
                 Id = Guid.NewGuid(),

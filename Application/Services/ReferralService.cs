@@ -49,7 +49,6 @@ public sealed class ReferralService(
         order.ReferrerId = partner.Id;
         order.ReferralRewardAmount = reward;
         order.ReferralRewardStatus = ReferralRewardStatus.Pending;
-        order.IsReferralRewardPaid = false;
         return true;
     }
 
@@ -115,7 +114,7 @@ public sealed class ReferralService(
 
             var partnerId = order.ReferrerId.Value;
             var partner = await dbContext.Partners
-                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"Id\" = {partnerId} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM \"Referrals\" WHERE \"Id\" = {partnerId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (partner is null)
@@ -130,7 +129,6 @@ public sealed class ReferralService(
             partner.TotalEarned += reward;
             order.ReferralRewardAmount = reward;
             order.ReferralRewardStatus = ReferralRewardStatus.Paid;
-            order.IsReferralRewardPaid = true;
             order.UpdatedAt = DateTime.UtcNow;
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -187,14 +185,14 @@ public sealed class ReferralService(
                 throw new KeyNotFoundException($"Замовлення з ID '{orderId}' не знайдено.");
             }
 
-            if (order.ReferrerId is null || ((order.ReferralRewardStatus == ReferralRewardStatus.None || order.ReferralRewardStatus == ReferralRewardStatus.Cancelled) && !order.IsReferralRewardPaid))
+            if (order.ReferrerId is null || order.ReferralRewardStatus is ReferralRewardStatus.None or ReferralRewardStatus.Cancelled)
             {
                 return null;
             }
 
             var partnerId = order.ReferrerId.Value;
             var partner = await dbContext.Partners
-                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"Id\" = {partnerId} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM \"Referrals\" WHERE \"Id\" = {partnerId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (partner is null)
@@ -202,14 +200,13 @@ public sealed class ReferralService(
                 return null;
             }
 
-            if (order.ReferralRewardStatus == ReferralRewardStatus.Paid || order.IsReferralRewardPaid)
+            if (order.ReferralRewardStatus == ReferralRewardStatus.Paid)
             {
                 partner.TotalEarned = Math.Max(0m, partner.TotalEarned - order.ReferralRewardAmount);
             }
 
             var previousReward = order.ReferralRewardAmount;
             order.ReferralRewardStatus = ReferralRewardStatus.Cancelled;
-            order.IsReferralRewardPaid = false;
             order.UpdatedAt = DateTime.UtcNow;
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -270,18 +267,9 @@ public sealed class ReferralService(
             })
             .ToDictionaryAsync(x => x.PartnerId, cancellationToken);
 
-        var payouts = await dbContext.PartnerPayoutRequests
-            .AsNoTracking()
-            .Where(p => partnerIds.Contains(p.PartnerId) && p.Status != PayoutRequestStatus.Rejected)
-            .GroupBy(p => p.PartnerId)
-            .Select(g => new { PartnerId = g.Key, PaidOrPendingSum = g.Sum(x => x.Amount) })
-            .ToDictionaryAsync(x => x.PartnerId, x => x.PaidOrPendingSum, cancellationToken);
-
         return partners.Select(p =>
         {
             var stats = orderStats.GetValueOrDefault(p.Id);
-            var paidOrPending = payouts.GetValueOrDefault(p.Id, 0m);
-            var availableBalance = Math.Max(0m, p.TotalEarned - paidOrPending);
 
             return new PartnerResponse(
                 p.Id,
@@ -292,10 +280,12 @@ public sealed class ReferralService(
                 p.TotalEarned,
                 p.CreatedAt,
                 stats?.PendingSum ?? 0m,
-                availableBalance,
+                p.TotalEarned,
                 stats?.TotalOrders ?? 0,
                 stats?.DeliveredOrders ?? 0,
-                stats?.TotalTurnover ?? 0m);
+                stats?.TotalTurnover ?? 0m,
+                p.CardNumber,
+                p.CardHolderName);
         }).ToArray();
     }
 
@@ -328,13 +318,6 @@ public sealed class ReferralService(
             .Where(o => o.OrderStatus != OrderStatus.Cancelled && o.OrderStatus != OrderStatus.Refused)
             .Sum(o => o.TotalPrice);
 
-        var paidOrPendingPayouts = await dbContext.PartnerPayoutRequests
-            .AsNoTracking()
-            .Where(p => p.PartnerId == partner.Id && p.Status != PayoutRequestStatus.Rejected)
-            .SumAsync(p => p.Amount, cancellationToken);
-
-        var availableBalance = Math.Max(0m, partner.TotalEarned - paidOrPendingPayouts);
-
         return new PartnerResponse(
             partner.Id,
             partner.TelegramUserId,
@@ -344,10 +327,12 @@ public sealed class ReferralService(
             partner.TotalEarned,
             partner.CreatedAt,
             pendingSum,
-            availableBalance,
+            partner.TotalEarned,
             totalOrders,
             deliveredOrders,
-            totalTurnover);
+            totalTurnover,
+            partner.CardNumber,
+            partner.CardHolderName);
     }
 
     public async Task<PartnerResponse> CreatePartnerAsync(
@@ -387,12 +372,18 @@ public sealed class ReferralService(
             throw new InvalidOperationException($"Партнер з TelegramUserId '{request.TelegramUserId}' вже існує.");
         }
 
+        var cleanCard = string.IsNullOrWhiteSpace(request.CardNumber)
+            ? null
+            : new string(request.CardNumber.Where(char.IsDigit).ToArray());
+
         var partner = new Partner
         {
             Id = Guid.NewGuid(),
             TelegramUserId = request.TelegramUserId,
             Name = name,
             ReferralCode = code,
+            CardNumber = string.IsNullOrEmpty(cleanCard) ? null : cleanCard,
+            CardHolderName = request.CardHolderName?.Trim(),
             CommissionPercent = request.CommissionPercent,
             TotalEarned = 0m,
             CreatedAt = DateTime.UtcNow
@@ -445,6 +436,19 @@ public sealed class ReferralService(
             }
 
             partner.ReferralCode = normalizedCode;
+        }
+
+        if (request.CardNumber is not null)
+        {
+            var cleanCard = new string(request.CardNumber.Where(char.IsDigit).ToArray());
+            partner.CardNumber = string.IsNullOrEmpty(cleanCard) ? null : cleanCard;
+        }
+
+        if (request.CardHolderName is not null)
+        {
+            partner.CardHolderName = string.IsNullOrWhiteSpace(request.CardHolderName)
+                ? null
+                : request.CardHolderName.Trim();
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -699,7 +703,7 @@ public sealed class ReferralService(
         try
         {
             var partner = await dbContext.Partners
-                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"TelegramUserId\" = {telegramUserId} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM \"Referrals\" WHERE \"TelegramUserId\" = {telegramUserId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (partner is null)
@@ -714,6 +718,11 @@ public sealed class ReferralService(
             }
 
             partner.TotalEarned -= request.Amount;
+            partner.CardNumber = cleanCard;
+            if (!string.IsNullOrWhiteSpace(request.CardHolderName))
+            {
+                partner.CardHolderName = request.CardHolderName.Trim();
+            }
 
             var payout = new PartnerPayoutRequest
             {
@@ -721,7 +730,7 @@ public sealed class ReferralService(
                 PartnerId = partner.Id,
                 Amount = request.Amount,
                 CardNumber = cleanCard,
-                CardHolderName = request.CardHolderName?.Trim(),
+                CardHolderName = request.CardHolderName?.Trim() ?? partner.CardHolderName,
                 Status = PayoutRequestStatus.Pending,
                 CreatedAt = DateTime.UtcNow
             };
@@ -844,7 +853,7 @@ public sealed class ReferralService(
         try
         {
             var payout = await dbContext.PartnerPayoutRequests
-                .FromSqlInterpolated($"SELECT * FROM \"PartnerPayoutRequests\" WHERE \"Id\" = {payoutId} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM \"ReferralPayoutRequests\" WHERE \"Id\" = {payoutId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (payout is null)
@@ -859,7 +868,7 @@ public sealed class ReferralService(
 
             var partnerId = payout.PartnerId;
             var partner = await dbContext.Partners
-                .FromSqlInterpolated($"SELECT * FROM \"Partners\" WHERE \"Id\" = {partnerId} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM \"Referrals\" WHERE \"Id\" = {partnerId} FOR UPDATE")
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (partner is null)
@@ -971,6 +980,12 @@ public sealed class ReferralService(
             partner.CommissionPercent,
             partner.TotalEarned,
             partner.CreatedAt,
-            pendingBalance);
+            pendingBalance,
+            partner.TotalEarned,
+            0,
+            0,
+            0m,
+            partner.CardNumber,
+            partner.CardHolderName);
     }
 }

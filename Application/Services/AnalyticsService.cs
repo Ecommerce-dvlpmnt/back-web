@@ -30,8 +30,7 @@ public sealed class AnalyticsService(AppDbContext dbContext) : Interfaces.IAnaly
                 o.TotalPrice,
                 o.TotalProfit,
                 o.ReferralRewardAmount,
-                o.ReferralRewardStatus,
-                o.IsReferralRewardPaid
+                o.ReferralRewardStatus
             })
             .ToListAsync(cancellationToken);
 
@@ -49,9 +48,9 @@ public sealed class AnalyticsService(AppDbContext dbContext) : Interfaces.IAnaly
 
         // 2. Net profit (minus referral commissions)
         var currentProfit = Math.Max(0m, Math.Round(validCurrent.Sum(o =>
-            o.TotalProfit - (o.IsReferralRewardPaid || o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2));
+            o.TotalProfit - (o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2));
         var prevProfit = Math.Max(0m, Math.Round(validPrev.Sum(o =>
-            o.TotalProfit - (o.IsReferralRewardPaid || o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2));
+            o.TotalProfit - (o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2));
         var profitGrowth = CalculateGrowth(currentProfit, prevProfit);
 
         // 3. Orders count & average check
@@ -95,8 +94,7 @@ public sealed class AnalyticsService(AppDbContext dbContext) : Interfaces.IAnaly
                 o.TotalPrice,
                 o.TotalProfit,
                 o.ReferralRewardAmount,
-                o.ReferralRewardStatus,
-                o.IsReferralRewardPaid
+                o.ReferralRewardStatus
             })
             .ToListAsync(cancellationToken);
 
@@ -114,7 +112,7 @@ public sealed class AnalyticsService(AppDbContext dbContext) : Interfaces.IAnaly
                 OrdersCount: dayOrders.Count,
                 Revenue: Math.Round(dayOrders.Sum(o => o.TotalPrice), 2),
                 Profit: Math.Max(0m, Math.Round(dayOrders.Sum(o =>
-                    o.TotalProfit - (o.IsReferralRewardPaid || o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2))));
+                    o.TotalProfit - (o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid ? o.ReferralRewardAmount : 0m)), 2))));
         }
 
         return new SalesChartResponse(points);

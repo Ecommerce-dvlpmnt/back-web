@@ -30,7 +30,6 @@ public class Order : ITrackableEntity
     public Guid? CampaignId { get; set; }
     public Guid? ReferrerId { get; set; }
     public decimal ReferralRewardAmount { get; set; }
-    public bool IsReferralRewardPaid { get; set; }
     public ReferralRewardStatus ReferralRewardStatus { get; set; } = ReferralRewardStatus.None;
     public string? AdminComment { get; set; }
     public DateTime CreatedAt { get; set; }

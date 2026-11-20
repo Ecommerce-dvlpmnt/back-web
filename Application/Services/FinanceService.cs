@@ -30,8 +30,7 @@ public sealed class FinanceService(AppDbContext dbContext, ICurrencyRateService 
                 o.TotalPrice,
                 o.TotalProfit,
                 o.ReferralRewardAmount,
-                o.ReferralRewardStatus,
-                o.IsReferralRewardPaid
+                o.ReferralRewardStatus
             })
             .ToListAsync(cancellationToken);
 
@@ -40,7 +39,7 @@ public sealed class FinanceService(AppDbContext dbContext, ICurrencyRateService 
         var totalDropCost = Math.Round(totalRevenue - totalProductMargin, 2);
         var totalReferralRewards = Math.Round(
             validOrders
-                .Where(o => o.IsReferralRewardPaid || o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid)
+                .Where(o => o.ReferralRewardStatus is ReferralRewardStatus.Pending or ReferralRewardStatus.Paid)
                 .Sum(o => o.ReferralRewardAmount),
             2);
         var grossProfit = Math.Max(0m, Math.Round(totalProductMargin - totalReferralRewards, 2));

@@ -146,7 +146,6 @@ public sealed record AdminOrderDetailResponse(
     string? ReferrerName = null,
     string? ReferralCode = null,
     decimal ReferralRewardAmount = 0m,
-    bool IsReferralRewardPaid = false,
     ReferralRewardStatus ReferralRewardStatus = ReferralRewardStatus.None);
 
 /// <summary>Request to update the admin internal comment for an order.</summary>

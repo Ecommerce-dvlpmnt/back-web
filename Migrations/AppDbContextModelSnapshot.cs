@@ -447,12 +447,6 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("ExternalPaymentId");
 
-                    b.Property<bool>("IsReferralRewardPaid")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("IsReferralRewardPaid");
-
                     b.Property<int>("OrderNumber")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -740,6 +734,16 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("Id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<string>("CardHolderName")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("CardHolderName");
+
+                    b.Property<string>("CardNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("CardNumber");
+
                     b.Property<decimal>("CommissionPercent")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(5, 2)
@@ -786,7 +790,7 @@ namespace EcommerceBackend.Migrations
                         .IsUnique()
                         .HasDatabaseName("Partners_TelegramUserId_key");
 
-                    b.ToTable("Partners", (string)null);
+                    b.ToTable("Referrals", (string)null);
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.PartnerDeposit", b =>
@@ -901,7 +905,7 @@ namespace EcommerceBackend.Migrations
                     b.HasIndex("Status")
                         .HasDatabaseName("IX_PartnerPayoutRequests_Status");
 
-                    b.ToTable("PartnerPayoutRequests", (string)null);
+                    b.ToTable("ReferralPayoutRequests", (string)null);
                 });
 
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Product", b =>

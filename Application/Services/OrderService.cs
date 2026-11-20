@@ -858,7 +858,6 @@ public sealed class OrderService(
             ReferrerName: order.Referrer?.Name,
             ReferralCode: order.Referrer?.ReferralCode,
             ReferralRewardAmount: order.ReferralRewardAmount,
-            IsReferralRewardPaid: order.IsReferralRewardPaid,
             ReferralRewardStatus: order.ReferralRewardStatus);
     }
 }

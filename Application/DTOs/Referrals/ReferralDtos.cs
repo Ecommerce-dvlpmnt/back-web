@@ -29,6 +29,12 @@ public sealed record CreatePartnerRequest
 
     [Range(0.01, 100)]
     public decimal CommissionPercent { get; init; } = 5.0m;
+
+    [StringLength(30)]
+    public string? CardNumber { get; init; }
+
+    [StringLength(150)]
+    public string? CardHolderName { get; init; }
 }
 
 public sealed record PartnerResponse(
@@ -43,7 +49,9 @@ public sealed record PartnerResponse(
     decimal AvailableBalance = 0m,
     int TotalOrders = 0,
     int DeliveredOrders = 0,
-    decimal TotalTurnover = 0m);
+    decimal TotalTurnover = 0m,
+    string? CardNumber = null,
+    string? CardHolderName = null);
 
 public sealed record UpdateReferralPartnerRequest
 {
@@ -56,6 +64,12 @@ public sealed record UpdateReferralPartnerRequest
     [StringLength(32, MinimumLength = 2)]
     [RegularExpression(@"^[A-Za-z0-9_-]+$")]
     public string? ReferralCode { get; init; }
+
+    [StringLength(30)]
+    public string? CardNumber { get; init; }
+
+    [StringLength(150)]
+    public string? CardHolderName { get; init; }
 }
 
 public sealed record ReferralCodeValidationResponse(
