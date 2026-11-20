@@ -100,7 +100,9 @@ public sealed record BotPartnerProfileResponse(
     decimal PendingBalance,
     int TotalOrdersCount,
     int DeliveredOrdersCount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? CardNumber = null,
+    string? CardHolderName = null);
 
 public sealed record BotPartnerStatsResponse(
     string PartnerName,
@@ -112,7 +114,9 @@ public sealed record BotPartnerStatsResponse(
     int TotalOrders,
     int DeliveredOrders,
     int PendingOrders,
-    int CancelledOrders);
+    int CancelledOrders,
+    string? CardNumber = null,
+    string? CardHolderName = null);
 
 public sealed record BotPartnerOrderDto(
     int OrderNumber,

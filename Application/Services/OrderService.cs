@@ -258,9 +258,9 @@ public sealed class OrderService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        var cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
         if (cancelledReward is not null)
         {
             _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, "скасовано клієнтом", CancellationToken.None);
@@ -413,29 +413,34 @@ public sealed class OrderService(
             cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+
+        ReferralRewardResult? deliveredReward = null;
+        ReferralRewardResult? cancelledReward = null;
 
         if (newStatus == OrderStatus.Delivered)
         {
-            var reward = await referralService.ProcessDeliveredOrderRewardAsync(order.Id, cancellationToken);
-            if (reward is not null)
-            {
-                _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(reward, CancellationToken.None);
-            }
+            deliveredReward = await referralService.ProcessDeliveredOrderRewardAsync(order.Id, cancellationToken);
         }
         else if (newStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
         {
-            var reward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
-            if (reward is not null)
+            cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        if (deliveredReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(deliveredReward, CancellationToken.None);
+        }
+        else if (cancelledReward is not null)
+        {
+            var reason = newStatus switch
             {
-                var reason = newStatus switch
-                {
-                    OrderStatus.Refused => "відмова на пошті",
-                    OrderStatus.Returned => "повернення товару",
-                    _ => "скасовано"
-                };
-                _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(reward, reason, CancellationToken.None);
-            }
+                OrderStatus.Refused => "відмова на пошті",
+                OrderStatus.Returned => "повернення товару",
+                _ => "скасовано"
+            };
+            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, reason, CancellationToken.None);
         }
 
         return MapToResponse(order);

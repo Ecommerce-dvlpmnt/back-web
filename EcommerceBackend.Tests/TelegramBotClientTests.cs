@@ -93,6 +93,7 @@ public sealed class TelegramBotClientTests
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
         Assert.Equal(777, doc.RootElement.GetProperty("chat_id").GetInt64());
         Assert.Equal("Hello", doc.RootElement.GetProperty("text").GetString());
+        Assert.Equal("HTML", doc.RootElement.GetProperty("parse_mode").GetString());
     }
 
     [Fact]

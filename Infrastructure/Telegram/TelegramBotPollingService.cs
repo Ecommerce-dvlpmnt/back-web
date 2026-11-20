@@ -11,6 +11,7 @@ public sealed class TelegramBotPollingService(
     ILogger<TelegramBotPollingService> logger) : BackgroundService
 {
     private static readonly TimeSpan ErrorDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan UpdateProcessingTimeout = TimeSpan.FromSeconds(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -83,13 +84,24 @@ public sealed class TelegramBotPollingService(
 
                 try
                 {
+                    using var updateCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    updateCts.CancelAfter(UpdateProcessingTimeout);
+
                     using var scope = scopeFactory.CreateScope();
                     var handler = scope.ServiceProvider.GetRequiredService<TelegramBotCommandHandler>();
-                    await handler.HandleUpdateAsync(update, stoppingToken);
+                    await handler.HandleUpdateAsync(update, updateCts.Token);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Час обробки Telegram update {UpdateId} вичерпано ({TimeoutSeconds} с).",
+                        update.UpdateId,
+                        UpdateProcessingTimeout.TotalSeconds);
                 }
                 catch (Exception ex)
                 {

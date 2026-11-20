@@ -107,6 +107,19 @@ public sealed class ReferralLifecycleScenarioTests
         // 8. Адміністратор у панелі схвалює виплату
         system.ApprovePayout(payout.Id);
         Assert.Equal(PayoutRequestStatus.Completed, payout.Status);
+
+        // 9. Наступне замовлення №103 на 8 000 грн (бонус 5% = 400 грн) -> доставлено
+        var order3 = system.PlaceOrder(orderNumber: 103, totalPrice: 8000m, referralCode: "AUTO_777123");
+        system.DeliverOrder(order3);
+
+        // 10. Повторне виведення: бот пропонує збережену картку, реферал підтверджує в 1 клік
+        await handler.HandleUpdateAsync(CreateMessage(telegramUserId, TelegramBotMenu.WithdrawButton));
+        await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "400"));
+        Assert.Contains("4149 •••• •••• 5678", telegramClient.LastMessageText);
+
+        await handler.HandleUpdateAsync(CreateMessage(telegramUserId, TelegramBotMenu.ConfirmSavedCardButton));
+        Assert.Contains("Заявку на виведення 400.00 грн створено", telegramClient.LastMessageText);
+        Assert.Equal(2, system.PayoutRequests.Count);
     }
 
     [Fact]
@@ -295,7 +308,9 @@ public sealed class ReferralLifecycleScenarioTests
                 orders.Count,
                 orders.Count(o => o.OrderStatus == OrderStatus.Delivered),
                 orders.Count(o => o.ReferralRewardStatus == ReferralRewardStatus.Pending),
-                orders.Count(o => o.OrderStatus == OrderStatus.Cancelled || o.OrderStatus == OrderStatus.Refused));
+                orders.Count(o => o.OrderStatus == OrderStatus.Cancelled || o.OrderStatus == OrderStatus.Refused),
+                partner.CardNumber,
+                partner.CardHolderName);
         }
 
         // --- IReferralService імплементація ---
@@ -330,7 +345,9 @@ public sealed class ReferralLifecycleScenarioTests
                 stats.PendingBalance,
                 stats.TotalOrders,
                 stats.DeliveredOrders,
-                p.CreatedAt));
+                p.CreatedAt,
+                p.CardNumber,
+                p.CardHolderName));
         }
 
         public Task<BotPartnerProfileResponse> RegisterBotPartnerAsync(BotRegisterPartnerRequest request, CancellationToken cancellationToken = default)

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using EcommerceBackend.Application.DTOs.Referrals;
@@ -13,6 +14,7 @@ public sealed class TelegramBotClient(
     ILogger<TelegramBotClient> logger) : ITelegramBotClient
 {
     public const string HttpClientName = "TelegramBot";
+    private static readonly TimeSpan FastApiRequestTimeout = TimeSpan.FromSeconds(10);
 
     public async Task<IReadOnlyList<TelegramUpdate>> GetUpdatesAsync(
         long offset,
@@ -103,11 +105,14 @@ public sealed class TelegramBotClient(
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
             var client = httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.PostAsJsonAsync(
                 BuildBotApiUri(botToken, "setMyCommands"),
                 new TelegramSetMyCommandsRequest(commands),
-                cancellationToken);
+                timeoutCts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -138,7 +143,7 @@ public sealed class TelegramBotClient(
 
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "Нове оплачене замовлення #{0} на суму {1:0.00} грн.\nНараховано {2:0.##}% реферальної винагороди: {3:0.00} грн.\nЗагальний баланс: {4:0.00} грн.",
+            "<b>Нове оплачене замовлення #{0}</b> на суму <b>{1:0.00} грн</b>.\nНараховано {2:0.##}% реферальної винагороди: <b>{3:0.00} грн</b>.\nЗагальний баланс: <b>{4:0.00} грн</b>.",
             reward.OrderNumber,
             reward.OrderTotal,
             reward.CommissionPercent,
@@ -156,7 +161,7 @@ public sealed class TelegramBotClient(
 
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "⏳ Нове замовлення #{0} на суму {1:0.00} грн!\nОчікувана реферальна винагорода ({2:0.##}%): +{3:0.00} грн (в холді до отримання клієнтом).",
+            "⏳ <b>Нове замовлення #{0}</b> на суму <b>{1:0.00} грн</b>!\nОчікувана реферальна винагорода ({2:0.##}%): <b>+{3:0.00} грн</b> (в холді до отримання клієнтом).",
             reward.OrderNumber,
             reward.OrderTotal,
             reward.CommissionPercent,
@@ -173,7 +178,7 @@ public sealed class TelegramBotClient(
 
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "💰 Замовлення #{0} успішно вручено клієнту!\nВинагорода +{1:0.00} грн зарахована на ваш баланс до виплати.\nЗагальний доступний баланс: {2:0.00} грн.",
+            "💰 <b>Замовлення #{0} успішно вручено клієнту!</b>\nВинагорода <b>+{1:0.00} грн</b> зарахована на ваш баланс до виплати.\nЗагальний доступний баланс: <b>{2:0.00} грн</b>.",
             reward.OrderNumber,
             reward.RewardAmount,
             reward.PartnerTotalEarned);
@@ -188,11 +193,12 @@ public sealed class TelegramBotClient(
     {
         ArgumentNullException.ThrowIfNull(reward);
 
+        var safeReason = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(reason) ? "скасовано" : reason.Trim());
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "❌ Замовлення #{0} скасовано або повернено ({1}).\nОчікувану винагороду {2:0.00} грн анульовано.\nПоточний баланс: {3:0.00} грн.",
+            "❌ <b>Замовлення #{0} скасовано або повернено</b> ({1}).\nОчікувану винагороду <b>{2:0.00} грн</b> анульовано.\nПоточний баланс: <b>{3:0.00} грн</b>.",
             reward.OrderNumber,
-            reason,
+            safeReason,
             reward.RewardAmount,
             reward.PartnerTotalEarned);
 
@@ -205,11 +211,12 @@ public sealed class TelegramBotClient(
         string cardNumberMasked,
         CancellationToken cancellationToken = default)
     {
+        var safeCard = WebUtility.HtmlEncode(cardNumberMasked ?? string.Empty);
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "💸 Виплату на суму {0:0.00} грн успішно надіслано на вашу картку {1}!\nДякуємо за співпрацю!",
+            "💸 Виплату на суму <b>{0:0.00} грн</b> успішно надіслано на вашу картку <code>{1}</code>!\nДякуємо за співпрацю!",
             amount,
-            cardNumberMasked);
+            safeCard);
 
         return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, null, cancellationToken);
     }
@@ -220,10 +227,10 @@ public sealed class TelegramBotClient(
         string? reason,
         CancellationToken cancellationToken = default)
     {
-        var reasonText = string.IsNullOrWhiteSpace(reason) ? "не вказано" : reason.Trim();
+        var reasonText = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(reason) ? "не вказано" : reason.Trim());
         var text = string.Format(
             CultureInfo.InvariantCulture,
-            "⚠️ Заявку на виведення {0:0.00} грн відхилено (причина: {1}).\nКошти повернуто на ваш доступний баланс.",
+            "⚠️ Заявку на виведення <b>{0:0.00} грн</b> відхилено (причина: {1}).\nКошти повернуто на ваш доступний баланс.",
             amount,
             reasonText);
 
@@ -255,12 +262,15 @@ public sealed class TelegramBotClient(
         }
 
         var requestUri = BuildBotApiUri(botToken, "sendMessage");
-        var payload = new TelegramSendMessageRequest(telegramUserId, text, replyMarkup);
+        var payload = new TelegramSendMessageRequest(telegramUserId, text, "HTML", replyMarkup);
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
             var client = httpClientFactory.CreateClient(HttpClientName);
-            using var response = await client.PostAsJsonAsync(requestUri, payload, cancellationToken);
+            using var response = await client.PostAsJsonAsync(requestUri, payload, timeoutCts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -301,6 +311,7 @@ public sealed class TelegramBotClient(
     private sealed record TelegramSendMessageRequest(
         [property: JsonPropertyName("chat_id")] long ChatId,
         [property: JsonPropertyName("text")] string Text,
+        [property: JsonPropertyName("parse_mode")] string ParseMode = "HTML",
         [property: JsonPropertyName("reply_markup")]
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         TelegramReplyMarkup? ReplyMarkup = null);

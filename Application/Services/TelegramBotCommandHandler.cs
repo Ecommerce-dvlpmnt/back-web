@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net;
 using System.Text;
 using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Interfaces;
@@ -15,7 +16,12 @@ public sealed class TelegramBotCommandHandler(
     ILogger<TelegramBotCommandHandler> logger)
 {
     private const decimal MinimumPayoutAmount = 300m;
+    private const int MaxActiveWithdrawalStates = 5000;
+    private static readonly TimeSpan WithdrawalStateTtl = TimeSpan.FromMinutes(10);
     private static readonly ConcurrentDictionary<long, WithdrawalState> WithdrawalStates = new();
+
+    public static bool HasActiveWithdrawalState(long telegramUserId) =>
+        WithdrawalStates.TryGetValue(telegramUserId, out var state) && !state.IsExpired(DateTime.UtcNow);
 
     public async Task HandleUpdateAsync(TelegramUpdate update, CancellationToken cancellationToken = default)
     {
@@ -40,6 +46,8 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
+        CleanupExpiredStates();
+
         var command = ParseCommand(text) ?? TelegramBotMenu.ResolveCommand(text);
         if (command is not null)
         {
@@ -49,6 +57,16 @@ public sealed class TelegramBotCommandHandler(
 
         if (WithdrawalStates.TryGetValue(from.Id, out var state))
         {
+            if (state.IsExpired(DateTime.UtcNow))
+            {
+                WithdrawalStates.TryRemove(from.Id, out _);
+                await SendAsync(
+                    chat.Id,
+                    "⏳ Час очікування введення вичерпано. Скористайтеся меню внизу.",
+                    cancellationToken);
+                return;
+            }
+
             await HandleWithdrawalInputAsync(chat.Id, from, state, text, cancellationToken);
             return;
         }
@@ -62,6 +80,9 @@ public sealed class TelegramBotCommandHandler(
         string command,
         CancellationToken cancellationToken)
     {
+        // Завжди скидаємо будь-який незавершений стан виведення при переході в інший розділ меню або команду
+        WithdrawalStates.TryRemove(user.Id, out _);
+
         switch (command)
         {
             case "/start":
@@ -83,7 +104,6 @@ public sealed class TelegramBotCommandHandler(
                 await SendPayoutsAsync(chatId, user.Id, cancellationToken);
                 break;
             case "/cancel":
-                WithdrawalStates.TryRemove(user.Id, out _);
                 await SendAsync(chatId, "Дію скасовано.", cancellationToken);
                 break;
             default:
@@ -96,18 +116,22 @@ public sealed class TelegramBotCommandHandler(
     {
         var (profile, created) = await EnsurePartnerAsync(user, cancellationToken);
 
+        var safeName = Html(profile.Name);
+        var safeCode = Html(profile.ReferralCode);
+        var safeLink = Html(BuildReferralLink(profile.ReferralCode));
+
         var greeting = created
-            ? $"Вітаю, {profile.Name}! Ви зареєстровані як партнер Jingle Decor."
-            : $"Вітаю, {profile.Name}! Ви вже зареєстровані як партнер Jingle Decor.";
+            ? $"Вітаю, <b>{safeName}</b>! Ви зареєстровані як партнер Jingle Decor."
+            : $"Вітаю, <b>{safeName}</b>! Ви вже зареєстровані як партнер Jingle Decor.";
 
         var text = $"""
             {greeting}
 
-            Ваш реферальний код: {profile.ReferralCode}
+            Ваш реферальний код: <code>{safeCode}</code> (натисніть, щоб скопіювати)
             Ваше посилання:
-            {BuildReferralLink(profile.ReferralCode)}
+            <code>{safeLink}</code>
 
-            Ви отримуєте {Percent(profile.CommissionPercent)}% від суми кожного замовлення за вашим посиланням.
+            Ви отримуєте <b>{Percent(profile.CommissionPercent)}%</b> від суми кожного замовлення за вашим посиланням.
 
             Скористайтеся меню внизу, щоб керувати ботом.
             """;
@@ -124,9 +148,12 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
+        var safeCode = Html(profile.ReferralCode);
+        var safeLink = Html(BuildReferralLink(profile.ReferralCode));
+
         await SendAsync(
             chatId,
-            $"Ваше реферальне посилання:\n{BuildReferralLink(profile.ReferralCode)}",
+            $"Ваш промокод: <code>{safeCode}</code> (натисніть, щоб скопіювати)\nВаше реферальне посилання:\n<code>{safeLink}</code>",
             cancellationToken);
     }
 
@@ -139,16 +166,21 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
+        var savedCard = NormalizeCardNumber(stats.CardNumber);
+        var cardLine = savedCard is not null
+            ? $"\nКартка: <code>{Html(MaskCardNumber(savedCard))}</code>"
+            : string.Empty;
+
         var text = $"""
-            Ваша статистика
+            <b>Ваша статистика</b>
 
-            Ім'я: {stats.PartnerName}
-            Код: {stats.ReferralCode}
-            Відсоток: {Percent(stats.CommissionPercent)}%
+            Ім'я: <b>{Html(stats.PartnerName)}</b>
+            Код: <code>{Html(stats.ReferralCode)}</code>
+            Відсоток: <b>{Percent(stats.CommissionPercent)}%</b>{cardLine}
 
-            Доступно до виведення: {Money(stats.AvailableBalance)} грн
+            <b>Доступно до виведення: {Money(stats.AvailableBalance)} грн</b>
             В холді: {Money(stats.PendingBalance)} грн
-            Загальний оборот: {Money(stats.TotalTurnover)} грн
+            <b>Загальний оборот: {Money(stats.TotalTurnover)} грн</b>
 
             Замовлень: {stats.TotalOrders}
             Доставлено: {stats.DeliveredOrders}
@@ -174,12 +206,12 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
-        var builder = new StringBuilder("Останні замовлення:\n");
+        var builder = new StringBuilder("<b>Останні замовлення:</b>\n");
         foreach (var order in orders.Items)
         {
             builder.AppendLine();
-            builder.AppendLine($"#{order.OrderNumber} • {Money(order.TotalPrice)} грн");
-            builder.AppendLine($"Винагорода: {Money(order.RewardAmount)} грн ({FormatRewardStatus(order.RewardStatus)})");
+            builder.AppendLine($"<b>#{order.OrderNumber} • {Money(order.TotalPrice)} грн</b>");
+            builder.AppendLine($"Винагорода: <b>{Money(order.RewardAmount)} грн</b> ({FormatRewardStatus(order.RewardStatus)})");
             builder.AppendLine($"Статус: {FormatOrderStatus(order.OrderStatus)}");
             builder.Append($"Дата: {order.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
         }
@@ -207,15 +239,20 @@ public sealed class TelegramBotCommandHandler(
         {
             await SendAsync(
                 chatId,
-                $"Мінімальна сума для виведення — {Money(MinimumPayoutAmount)} грн.\nДоступно зараз: {Money(profile.AvailableBalance)} грн.",
+                $"Мінімальна сума для виведення — {Money(MinimumPayoutAmount)} грн.\nДоступно зараз: <b>{Money(profile.AvailableBalance)} грн</b>.",
                 cancellationToken);
             return;
         }
 
-        WithdrawalStates[telegramUserId] = new WithdrawalState();
+        CleanupExpiredStates();
+        WithdrawalStates[telegramUserId] = new WithdrawalState
+        {
+            SavedCardNumber = NormalizeCardNumber(profile.CardNumber)
+        };
+
         await SendAsync(
             chatId,
-            $"Доступно до виведення: {Money(profile.AvailableBalance)} грн.\n\nВведіть суму для виведення (мінімум {Money(MinimumPayoutAmount)} грн) або /cancel.",
+            $"<b>Доступно до виведення: {Money(profile.AvailableBalance)} грн.</b>\n\nВведіть суму для виведення (мінімум {Money(MinimumPayoutAmount)} грн) або /cancel.",
             cancellationToken);
     }
 
@@ -230,7 +267,8 @@ public sealed class TelegramBotCommandHandler(
         {
             if (!TryParseAmount(text, out var amount))
             {
-                await SendAsync(chatId, "Не вдалося розпізнати суму. Введіть число, наприклад: 500", cancellationToken);
+                state.Touch();
+                await SendAsync(chatId, "Не вдалося розпізнати суму. Введіть число, наприклад: <code>500</code>", cancellationToken);
                 return;
             }
 
@@ -244,12 +282,14 @@ public sealed class TelegramBotCommandHandler(
 
             if (amount < MinimumPayoutAmount)
             {
+                state.Touch();
                 await SendAsync(chatId, $"Мінімальна сума для виведення — {Money(MinimumPayoutAmount)} грн.", cancellationToken);
                 return;
             }
 
             if (amount > profile.AvailableBalance)
             {
+                state.Touch();
                 await SendAsync(
                     chatId,
                     $"Недостатньо коштів. Доступно: {Money(profile.AvailableBalance)} грн.",
@@ -258,38 +298,102 @@ public sealed class TelegramBotCommandHandler(
             }
 
             state.Amount = amount;
+            state.SavedCardNumber = NormalizeCardNumber(profile.CardNumber) ?? state.SavedCardNumber;
+            state.Touch();
+
+            if (!string.IsNullOrEmpty(state.SavedCardNumber))
+            {
+                state.AwaitingSavedCardConfirmation = true;
+                var masked = Html(MaskCardNumber(state.SavedCardNumber));
+                await telegramBotClient.SendMessageAsync(
+                    chatId,
+                    $"Доступно: <b>{Money(profile.AvailableBalance)} грн</b>.\nСума до виведення: <b>{Money(amount)} грн</b>.\n\nВивести на збережену картку <code>{masked}</code>?",
+                    TelegramBotMenu.SavedCardConfirmationReplyMarkup,
+                    cancellationToken);
+                return;
+            }
+
+            state.AwaitingSavedCardConfirmation = false;
             await SendAsync(chatId, "Введіть номер банківської картки (16 цифр) або /cancel.", cancellationToken);
+            return;
+        }
+
+        if (state.AwaitingSavedCardConfirmation && !string.IsNullOrEmpty(state.SavedCardNumber))
+        {
+            if (IsConfirmSavedCardInput(text))
+            {
+                await ExecutePayoutAsync(chatId, user.Id, state.Amount.Value, state.SavedCardNumber, cancellationToken);
+                return;
+            }
+
+            if (IsEnterNewCardInput(text))
+            {
+                state.AwaitingSavedCardConfirmation = false;
+                state.Touch();
+                await SendAsync(chatId, "Введіть номер банківської картки (16 цифр) або /cancel.", cancellationToken);
+                return;
+            }
+
+            var typedCardDigits = new string(text.Where(char.IsDigit).ToArray());
+            if (typedCardDigits.Length == 16)
+            {
+                await ExecutePayoutAsync(chatId, user.Id, state.Amount.Value, typedCardDigits, cancellationToken);
+                return;
+            }
+
+            state.Touch();
+            var masked = Html(MaskCardNumber(state.SavedCardNumber));
+            await telegramBotClient.SendMessageAsync(
+                chatId,
+                $"Вивести <b>{Money(state.Amount.Value)} грн</b> на збережену картку <code>{masked}</code>?\n\nНатисніть <b>«{TelegramBotMenu.ConfirmSavedCardButton}»</b>, <b>«{TelegramBotMenu.EnterNewCardButton}»</b> або введіть 16 цифр нової картки (чи /cancel).",
+                TelegramBotMenu.SavedCardConfirmationReplyMarkup,
+                cancellationToken);
             return;
         }
 
         var cardNumber = new string(text.Where(char.IsDigit).ToArray());
         if (cardNumber.Length != 16)
         {
+            state.Touch();
             await SendAsync(chatId, "Номер картки повинен містити рівно 16 цифр. Спробуйте ще раз або /cancel.", cancellationToken);
+            return;
+        }
+
+        await ExecutePayoutAsync(chatId, user.Id, state.Amount.Value, cardNumber, cancellationToken);
+    }
+
+    private async Task ExecutePayoutAsync(
+        long chatId,
+        long telegramUserId,
+        decimal amount,
+        string cardNumber,
+        CancellationToken cancellationToken)
+    {
+        // Атомарно видаляємо стан ПЕРЕД викликом БД, щоб унеможливити повторну відправку (double-submit)
+        if (!WithdrawalStates.TryRemove(telegramUserId, out _))
+        {
             return;
         }
 
         try
         {
             var payout = await referralService.RequestPayoutAsync(
-                user.Id,
+                telegramUserId,
                 new BotPayoutRequestDto
                 {
-                    Amount = state.Amount.Value,
+                    Amount = amount,
                     CardNumber = cardNumber
                 },
                 cancellationToken);
 
-            WithdrawalStates.TryRemove(user.Id, out _);
             await SendAsync(
                 chatId,
-                $"Заявку на виведення {Money(payout.Amount)} грн створено.\nКартка: {payout.CardNumberMasked}\nСтатус: {FormatPayoutStatus(payout.Status)}.\nЗалишок доступного балансу: {Money(payout.RemainingAvailableBalance)} грн.",
+                $"<b>Заявку на виведення {Money(payout.Amount)} грн створено.</b>\nКартка: <code>{Html(payout.CardNumberMasked)}</code>\nСтатус: {FormatPayoutStatus(payout.Status)}.\nЗалишок доступного балансу: <b>{Money(payout.RemainingAvailableBalance)} грн</b>.",
                 cancellationToken);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Не вдалося створити заявку на виплату для TelegramUserId {TelegramUserId}.", user.Id);
-            WithdrawalStates.TryRemove(user.Id, out _);
+            logger.LogWarning(ex, "Не вдалося створити заявку на виплату для TelegramUserId {TelegramUserId}.", telegramUserId);
             await SendAsync(
                 chatId,
                 "Не вдалося створити заявку на виведення. Перевірте суму та номер картки і спробуйте ще раз.",
@@ -306,12 +410,12 @@ public sealed class TelegramBotCommandHandler(
             return;
         }
 
-        var builder = new StringBuilder("Останні виплати:\n");
+        var builder = new StringBuilder("<b>Останні виплати:</b>\n");
         foreach (var payout in payouts.Take(10))
         {
             builder.AppendLine();
-            builder.AppendLine($"{Money(payout.Amount)} грн • {FormatPayoutStatus(payout.Status)}");
-            builder.AppendLine($"Картка: {payout.CardNumberMasked}");
+            builder.AppendLine($"<b>{Money(payout.Amount)} грн</b> • {FormatPayoutStatus(payout.Status)}");
+            builder.AppendLine($"Картка: <code>{Html(payout.CardNumberMasked)}</code>");
             builder.Append($"Дата: {payout.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
         }
 
@@ -428,6 +532,83 @@ public sealed class TelegramBotCommandHandler(
         return name.Length > 100 ? name[..100] : name;
     }
 
+    private static void CleanupExpiredStates()
+    {
+        if (WithdrawalStates.IsEmpty)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var pair in WithdrawalStates)
+        {
+            if (pair.Value.IsExpired(now))
+            {
+                WithdrawalStates.TryRemove(pair.Key, out _);
+            }
+        }
+
+        if (WithdrawalStates.Count > MaxActiveWithdrawalStates)
+        {
+            var excessCount = WithdrawalStates.Count - MaxActiveWithdrawalStates;
+            var oldestKeys = WithdrawalStates
+                .OrderBy(pair => pair.Value.UpdatedAtUtc)
+                .Take(excessCount)
+                .Select(pair => pair.Key)
+                .ToArray();
+
+            foreach (var key in oldestKeys)
+            {
+                WithdrawalStates.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private static string? NormalizeCardNumber(string? cardNumber)
+    {
+        if (string.IsNullOrWhiteSpace(cardNumber))
+        {
+            return null;
+        }
+
+        var digits = new string(cardNumber.Where(char.IsDigit).ToArray());
+        return digits.Length == 16 ? digits : null;
+    }
+
+    private static string MaskCardNumber(string cardNumber)
+    {
+        var digits = NormalizeCardNumber(cardNumber);
+        if (digits is null)
+        {
+            return cardNumber;
+        }
+
+        return $"{digits[..4]} •••• •••• {digits[^4..]}";
+    }
+
+    private static bool IsConfirmSavedCardInput(string text)
+    {
+        var normalized = text.Trim();
+        return string.Equals(normalized, TelegramBotMenu.ConfirmSavedCardButton, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "✅ Так, на збережену картку", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "так", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "да", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "+", StringComparison.Ordinal);
+    }
+
+    private static bool IsEnterNewCardInput(string text)
+    {
+        var normalized = text.Trim();
+        return string.Equals(normalized, TelegramBotMenu.EnterNewCardButton, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "💳 Вказати іншу картку", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "інша", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "іншу", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "нова", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Html(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Percent(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);
@@ -474,5 +655,12 @@ public sealed class TelegramBotCommandHandler(
     private sealed class WithdrawalState
     {
         public decimal? Amount { get; set; }
+        public string? SavedCardNumber { get; set; }
+        public bool AwaitingSavedCardConfirmation { get; set; }
+        public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
+
+        public void Touch() => UpdatedAtUtc = DateTime.UtcNow;
+
+        public bool IsExpired(DateTime nowUtc) => nowUtc - UpdatedAtUtc > WithdrawalStateTtl;
     }
 }

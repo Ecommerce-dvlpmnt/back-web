@@ -510,7 +510,9 @@ public sealed class ReferralService(
             pending,
             orders.Count,
             deliveredCount,
-            partner.CreatedAt);
+            partner.CreatedAt,
+            partner.CardNumber,
+            partner.CardHolderName);
     }
 
     public async Task<BotPartnerProfileResponse> RegisterBotPartnerAsync(
@@ -578,7 +580,9 @@ public sealed class ReferralService(
             0m,
             0,
             0,
-            partner.CreatedAt);
+            partner.CreatedAt,
+            partner.CardNumber,
+            partner.CardHolderName);
     }
 
     public async Task<BotPartnerStatsResponse?> GetBotPartnerStatsAsync(
@@ -627,7 +631,9 @@ public sealed class ReferralService(
             orders.Count,
             deliveredCount,
             pendingCount,
-            cancelledCount);
+            cancelledCount,
+            partner.CardNumber,
+            partner.CardHolderName);
     }
 
     public async Task<BotPartnerOrdersResponse?> GetBotPartnerOrdersAsync(
@@ -689,8 +695,11 @@ public sealed class ReferralService(
             throw new ArgumentException("Мінімальна сума для виведення становить 300 грн.", nameof(request));
         }
 
-        var cleanCard = new string(request.CardNumber.Where(char.IsDigit).ToArray());
-        if (cleanCard.Length != 16)
+        var cleanCard = string.IsNullOrWhiteSpace(request.CardNumber)
+            ? string.Empty
+            : new string(request.CardNumber.Where(char.IsDigit).ToArray());
+
+        if (!string.IsNullOrWhiteSpace(request.CardNumber) && cleanCard.Length != 16)
         {
             throw new ArgumentException("Номер банківської картки повинен містити 16 цифр.", nameof(request));
         }
@@ -709,6 +718,16 @@ public sealed class ReferralService(
             if (partner is null)
             {
                 throw new KeyNotFoundException($"Партнера з Telegram ID '{telegramUserId}' не знайдено.");
+            }
+
+            if (cleanCard.Length == 0 && !string.IsNullOrWhiteSpace(partner.CardNumber))
+            {
+                cleanCard = new string(partner.CardNumber.Where(char.IsDigit).ToArray());
+            }
+
+            if (cleanCard.Length != 16)
+            {
+                throw new ArgumentException("Номер банківської картки повинен містити 16 цифр.", nameof(request));
             }
 
             if (partner.TotalEarned < request.Amount)

@@ -185,6 +185,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) =>
         services.GetRequiredService<NpgsqlDataSource>(),
         o =>
         {
+            o.CommandTimeout(15);
             o.MapEnum<PaymentMethod>("payment_method", nameTranslator: nameTranslator);
             o.MapEnum<OrderStatus>("order_status", nameTranslator: nameTranslator);
             o.MapEnum<PaymentStatus>("payment_status", nameTranslator: nameTranslator);
