@@ -65,6 +65,14 @@ public sealed class OrderService(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
             .ToDictionaryAsync(product => product.Id, cancellationToken);
 
+        var inactiveProducts = products.Values.Where(product => !product.IsActive).ToList();
+        if (inactiveProducts.Count > 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var names = string.Join(", ", inactiveProducts.Select(product => $"'{product.Name}'"));
+            throw new InvalidOperationException($"Товар {names} знято з продажу та недоступний для замовлення.");
+        }
+
         var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
         if (shortages.Count > 0)
         {
@@ -652,6 +660,13 @@ public sealed class OrderService(
             .FromSqlInterpolated(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
             .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        var inactiveProducts = products.Values.Where(product => !product.IsActive).ToList();
+        if (inactiveProducts.Count > 0)
+        {
+            var names = string.Join(", ", inactiveProducts.Select(product => $"'{product.Name}'"));
+            throw new InvalidOperationException($"Товар {names} знято з продажу та недоступний для замовлення.");
+        }
 
         var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
         if (shortages.Count > 0)

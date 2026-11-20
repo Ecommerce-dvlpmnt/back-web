@@ -367,6 +367,9 @@ public sealed class ReviewServiceTests
         public Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
 
+        public Task<bool> HasOrdersAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
         public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
 

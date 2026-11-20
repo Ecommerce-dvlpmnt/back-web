@@ -42,4 +42,27 @@ public sealed class OrderStockValidatorTests
         Assert.Equal(1, shortage.RequestedQuantity);
         Assert.Equal(0, shortage.AvailableQuantity);
     }
+
+    [Fact]
+    public void GetShortages_TreatsInactiveProductAsZeroAvailable()
+    {
+        var productId = Guid.NewGuid();
+        var product = new Product
+        {
+            Id = productId,
+            Name = "Archived product",
+            Stock = 10,
+            IsActive = false
+        };
+
+        var shortages = OrderStockValidator.GetShortages(
+            new Dictionary<Guid, int> { [productId] = 1 },
+            new Dictionary<Guid, Product> { [productId] = product });
+
+        var shortage = Assert.Single(shortages);
+        Assert.Equal(productId, shortage.ProductId);
+        Assert.Equal("Archived product", shortage.ProductName);
+        Assert.Equal(1, shortage.RequestedQuantity);
+        Assert.Equal(0, shortage.AvailableQuantity);
+    }
 }

@@ -107,15 +107,32 @@ public sealed class AdminProductsController(IProductService productService) : Co
         return updated ? NoContent() : NotFound();
     }
 
-    /// <summary>М'яке видалення товару (деактивація IsActive = false).</summary>
+    /// <summary>Швидке перемикання статусу активності товару (активний / неактивний).</summary>
+    [HttpPatch("{id:guid}/status")]
+    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateProductStatusDto request,
+        CancellationToken cancellationToken)
+    {
+        var product = await productService.UpdateStatusAsync(id, request.IsActive, cancellationToken);
+        return product is null ? NotFound() : Ok(product);
+    }
+
+    /// <summary>Видалення товару (якщо до нього не прив'язані замовлення).</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> SoftDelete(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await productService.SoftDeleteAsync(id, cancellationToken);
+        var deleted = await productService.DeleteAsync(id, cancellationToken);
         return deleted ? NoContent() : NotFound();
     }
 }

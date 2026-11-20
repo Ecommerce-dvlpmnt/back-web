@@ -26,16 +26,50 @@ public sealed class ProductService(
         };
     }
 
+    public async Task<PagedResult<PublicProductDto>> GetPublicAllAsync(
+        ProductQueryParameters query,
+        CancellationToken cancellationToken = default)
+    {
+        query.OnlyActive = true;
+        var result = await productRepository.GetAllAsync(query, cancellationToken);
+        return new PagedResult<PublicProductDto>
+        {
+            Items = result.Items.Select(MapToPublicDto).ToList(),
+            TotalCount = result.TotalCount,
+            PageNumber = result.PageNumber,
+            PageSize = result.PageSize,
+            TotalPages = result.TotalPages
+        };
+    }
+
     public async Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var product = await productRepository.GetByIdAsync(id, cancellationToken);
         return product is null ? null : MapToDto(product);
     }
 
+    public async Task<PublicProductDto?> GetPublicByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null || !product.IsActive)
+            return null;
+
+        return MapToPublicDto(product);
+    }
+
     public async Task<ProductDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
         var product = await productRepository.GetBySlugAsync(slug, cancellationToken);
         return product is null ? null : MapToDto(product);
+    }
+
+    public async Task<PublicProductDto?> GetPublicBySlugAsync(string slug, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetBySlugAsync(slug, cancellationToken);
+        if (product is null || !product.IsActive)
+            return null;
+
+        return MapToPublicDto(product);
     }
 
     public async Task<ProductDto> CreateAsync(CreateProductDto request, CancellationToken cancellationToken = default)
@@ -167,8 +201,58 @@ public sealed class ProductService(
         return MapToDto(updatedProduct);
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
-        productRepository.DeleteAsync(id, cancellationToken);
+    public async Task<ProductDto?> UpdateStatusAsync(
+        Guid id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return null;
+
+        if (product.IsActive != isActive)
+        {
+            await auditLogService.LogAsync(
+                isActive ? AuditLogActions.ProductActivated : AuditLogActions.ProductDeactivated,
+                AuditLogEntityTypes.Product,
+                product.Id.ToString(),
+                new
+                {
+                    sku = product.Sku,
+                    name = product.Name,
+                    before = new { isActive = product.IsActive },
+                    after = new { isActive }
+                },
+                cancellationToken);
+        }
+
+        product.IsActive = isActive;
+        var updated = await productRepository.UpdateAsync(product, cancellationToken);
+        return updated is null ? null : MapToDto(updated);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return false;
+
+        if (await productRepository.HasOrdersAsync(id, cancellationToken))
+            throw new InvalidOperationException("Неможливо видалити товар, за яким вже є оформлені замовлення. Деактивуйте його замість видалення.");
+
+        await auditLogService.LogAsync(
+            AuditLogActions.ProductDeleted,
+            AuditLogEntityTypes.Product,
+            product.Id.ToString(),
+            new
+            {
+                sku = product.Sku,
+                name = product.Name
+            },
+            cancellationToken);
+
+        return await productRepository.DeleteAsync(id, cancellationToken);
+    }
 
     public async Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -278,6 +362,38 @@ public sealed class ProductService(
         Slug = product.Slug,
         Description = product.Description,
         DropPrice = product.DropPrice,
+        Price = product.Price,
+        OldPrice = product.OldPrice,
+        Stock = product.Stock,
+        MainImageUrl = product.MainImageUrl,
+        Attributes = product.Attributes,
+        MetaTitle = product.MetaTitle,
+        MetaDescription = product.MetaDescription,
+        WeightKg = product.WeightKg,
+        IsActive = product.IsActive,
+        CreatedAt = product.CreatedAt,
+        UpdatedAt = product.UpdatedAt,
+        Images = product.Images
+            .OrderBy(image => image.SortOrder)
+            .Select(image => new ProductImageDto
+            {
+                Id = image.Id,
+                Url = image.Url,
+                Alt = image.Alt,
+                SortOrder = image.SortOrder
+            })
+            .ToList()
+    };
+
+    private static PublicProductDto MapToPublicDto(Product product) => new()
+    {
+        Id = product.Id,
+        CategoryId = product.CategoryId,
+        CategoryName = product.Category?.Name,
+        Sku = product.Sku,
+        Name = product.Name,
+        Slug = product.Slug,
+        Description = product.Description,
         Price = product.Price,
         OldPrice = product.OldPrice,
         Stock = product.Stock,

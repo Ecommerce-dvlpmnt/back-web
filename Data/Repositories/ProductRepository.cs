@@ -151,6 +151,9 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         return true;
     }
 
+    public Task<bool> HasOrdersAsync(Guid id, CancellationToken cancellationToken = default) =>
+        dbContext.OrderItems.AnyAsync(item => item.ProductId == id, cancellationToken);
+
     public async Task<bool> UpdateStockAsync(Guid id, int stock, CancellationToken cancellationToken = default)
     {
         var product = await dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);

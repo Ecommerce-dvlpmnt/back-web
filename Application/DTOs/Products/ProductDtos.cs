@@ -10,6 +10,29 @@ public sealed class ProductImageDto
     public int SortOrder { get; set; }
 }
 
+public sealed class PublicProductDto
+{
+    public Guid Id { get; set; }
+    public Guid CategoryId { get; set; }
+    public string? CategoryName { get; set; }
+    public string Sku { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public decimal Price { get; set; }
+    public decimal? OldPrice { get; set; }
+    public int Stock { get; set; }
+    public string? MainImageUrl { get; set; }
+    public string? Attributes { get; set; }
+    public string? MetaTitle { get; set; }
+    public string? MetaDescription { get; set; }
+    public decimal? WeightKg { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public List<ProductImageDto> Images { get; set; } = [];
+}
+
 public sealed class ProductDto
 {
     public Guid Id { get; set; }
@@ -91,6 +114,11 @@ public sealed class UpdateStockDto
     public int? StockQuantity { get; set; }
 
     public int GetStock() => Stock ?? StockQuantity ?? 0;
+}
+
+public sealed class UpdateProductStatusDto
+{
+    public bool IsActive { get; init; }
 }
 
 public sealed class ProductQueryParameters

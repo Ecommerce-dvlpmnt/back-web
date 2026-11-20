@@ -12,33 +12,33 @@ public sealed class ProductsController(IProductService productService) : Control
 {
     /// <summary>Каталог активних товарів для вітрини магазину з пагінацією, фільтрацією та пошуком.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PagedResult<PublicProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<PagedResult<ProductDto>>> GetAll(
+    public async Task<ActionResult<PagedResult<PublicProductDto>>> GetAll(
         [FromQuery] ProductQueryParameters query,
         CancellationToken cancellationToken)
     {
-        query.OnlyActive ??= true;
-        return Ok(await productService.GetAllAsync(query, cancellationToken));
+        query.OnlyActive = true;
+        return Ok(await productService.GetPublicAllAsync(query, cancellationToken));
     }
 
-    /// <summary>Картка товару за ID для вітрини.</summary>
+    /// <summary>Картка активного товару за ID для вітрини.</summary>
     [HttpGet("{id:guid}")]
-    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PublicProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ProductDto>> GetById(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<PublicProductDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var product = await productService.GetByIdAsync(id, cancellationToken);
+        var product = await productService.GetPublicByIdAsync(id, cancellationToken);
         return product is null ? NotFound() : Ok(product);
     }
 
-    /// <summary>Картка товару за унікальним слагом (URL) для вітрини.</summary>
+    /// <summary>Картка активного товару за унікальним слагом (URL) для вітрини.</summary>
     [HttpGet("by-slug/{slug}")]
-    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PublicProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ProductDto>> GetBySlug(string slug, CancellationToken cancellationToken)
+    public async Task<ActionResult<PublicProductDto>> GetBySlug(string slug, CancellationToken cancellationToken)
     {
-        var product = await productService.GetBySlugAsync(slug, cancellationToken);
+        var product = await productService.GetPublicBySlugAsync(slug, cancellationToken);
         return product is null ? NotFound() : Ok(product);
     }
 }
