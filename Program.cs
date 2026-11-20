@@ -10,6 +10,7 @@ using EcommerceBackend.Data.Repositories;
 using EcommerceBackend.Domain.Enums;
 using EcommerceBackend.Infrastructure.Logging;
 using EcommerceBackend.Infrastructure.Storage;
+using EcommerceBackend.Infrastructure.Telegram;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -59,6 +60,7 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
         : LogEventLevel.Information)
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.With<SensitiveDataMaskingEnricher>()
     .WriteTo.Console()
@@ -200,9 +202,10 @@ builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
 });
 builder.Services.AddHttpClient(TelegramBotClient.HttpClientName, client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(15);
+    client.Timeout = TimeSpan.FromSeconds(65);
 });
 builder.Services.AddSingleton<ITelegramBotClient, TelegramBotClient>();
+builder.Services.AddScoped<TelegramBotCommandHandler>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -213,6 +216,7 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IReferralService, ReferralService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddHostedService<TelegramBotPollingService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();

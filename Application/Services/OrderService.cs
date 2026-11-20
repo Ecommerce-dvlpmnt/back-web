@@ -505,18 +505,10 @@ public sealed class OrderService(
             order.OrderNumber,
             order.PublicId);
 
-        var telegramNotificationSent = false;
-        if (referralReward is not null)
-        {
-            telegramNotificationSent = await telegramBotClient.SendReferralRewardNotificationAsync(
-                referralReward,
-                cancellationToken);
-        }
-
         return new OrderPaymentConfirmationResponse(
             MapToResponse(order),
             referralReward,
-            telegramNotificationSent);
+            false);
     }
 
     public async Task<OrderPaymentConfirmationResponse> ProcessPaymentWebhookAsync(

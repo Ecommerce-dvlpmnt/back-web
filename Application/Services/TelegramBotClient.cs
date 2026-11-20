@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Application.Telegram;
 
 namespace EcommerceBackend.Application.Services;
 
@@ -12,6 +13,122 @@ public sealed class TelegramBotClient(
     ILogger<TelegramBotClient> logger) : ITelegramBotClient
 {
     public const string HttpClientName = "TelegramBot";
+
+    public async Task<IReadOnlyList<TelegramUpdate>> GetUpdatesAsync(
+        long offset,
+        int timeoutSeconds = 30,
+        CancellationToken cancellationToken = default)
+    {
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            logger.LogWarning("Telegram:BotToken не заданий. Отримання оновлень неможливе.");
+            return Array.Empty<TelegramUpdate>();
+        }
+
+        var payload = new TelegramGetUpdatesRequest(
+            offset,
+            Math.Clamp(timeoutSeconds, 1, 50),
+            ["message"]);
+
+        try
+        {
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "getUpdates"),
+                payload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Telegram Bot API повернув статус {StatusCode} при отриманні оновлень.",
+                    (int)response.StatusCode);
+                response.EnsureSuccessStatusCode();
+            }
+
+            var apiResponse = await response.Content.ReadFromJsonAsync<TelegramApiResponse<TelegramUpdate[]>>(
+                cancellationToken);
+
+            if (apiResponse is null || !apiResponse.Ok)
+            {
+                logger.LogWarning(
+                    "Telegram Bot API повернув неуспішну відповідь: {Description}.",
+                    apiResponse?.Description ?? "невідома помилка");
+                return Array.Empty<TelegramUpdate>();
+            }
+
+            return apiResponse.Result ?? Array.Empty<TelegramUpdate>();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка при отриманні оновлень Telegram.");
+            throw;
+        }
+    }
+
+    public async Task<bool> SendMessageAsync(
+        long telegramUserId,
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, null, cancellationToken);
+    }
+
+    public async Task<bool> SendMessageAsync(
+        long telegramUserId,
+        string text,
+        TelegramReplyMarkup? replyMarkup,
+        CancellationToken cancellationToken = default)
+    {
+        return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, replyMarkup, cancellationToken);
+    }
+
+    public async Task<bool> SetMyCommandsAsync(
+        IReadOnlyList<TelegramBotCommand> commands,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            logger.LogWarning("Telegram:BotToken не заданий. Налаштування меню неможливе.");
+            return false;
+        }
+
+        try
+        {
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "setMyCommands"),
+                new TelegramSetMyCommandsRequest(commands),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Telegram Bot API повернув статус {StatusCode} при налаштуванні меню команд.",
+                    (int)response.StatusCode);
+                return false;
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка при налаштуванні меню команд Telegram.");
+            return false;
+        }
+    }
 
     public async Task<bool> SendReferralRewardNotificationAsync(
         ReferralRewardResult reward,
@@ -28,7 +145,7 @@ public sealed class TelegramBotClient(
             reward.RewardAmount,
             reward.PartnerTotalEarned);
 
-        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+        return await SendMessageCoreAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, null, cancellationToken);
     }
 
     public async Task<bool> SendReferralRewardPendingNotificationAsync(
@@ -45,7 +162,7 @@ public sealed class TelegramBotClient(
             reward.CommissionPercent,
             reward.RewardAmount);
 
-        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+        return await SendMessageCoreAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, null, cancellationToken);
     }
 
     public async Task<bool> SendReferralRewardDeliveredNotificationAsync(
@@ -61,7 +178,7 @@ public sealed class TelegramBotClient(
             reward.RewardAmount,
             reward.PartnerTotalEarned);
 
-        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+        return await SendMessageCoreAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, null, cancellationToken);
     }
 
     public async Task<bool> SendReferralRewardCancelledNotificationAsync(
@@ -79,7 +196,7 @@ public sealed class TelegramBotClient(
             reward.RewardAmount,
             reward.PartnerTotalEarned);
 
-        return await SendMessageAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, cancellationToken);
+        return await SendMessageCoreAsync(reward.PartnerTelegramUserId, reward.PartnerId, text, null, cancellationToken);
     }
 
     public async Task<bool> SendPayoutCompletedNotificationAsync(
@@ -94,7 +211,7 @@ public sealed class TelegramBotClient(
             amount,
             cardNumberMasked);
 
-        return await SendMessageAsync(telegramUserId, Guid.Empty, text, cancellationToken);
+        return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, null, cancellationToken);
     }
 
     public async Task<bool> SendPayoutRejectedNotificationAsync(
@@ -110,13 +227,14 @@ public sealed class TelegramBotClient(
             amount,
             reasonText);
 
-        return await SendMessageAsync(telegramUserId, Guid.Empty, text, cancellationToken);
+        return await SendMessageCoreAsync(telegramUserId, Guid.Empty, text, null, cancellationToken);
     }
 
-    private async Task<bool> SendMessageAsync(
+    private async Task<bool> SendMessageCoreAsync(
         long telegramUserId,
         Guid partnerId,
         string text,
+        TelegramReplyMarkup? replyMarkup,
         CancellationToken cancellationToken)
     {
         if (telegramUserId <= 0)
@@ -136,16 +254,8 @@ public sealed class TelegramBotClient(
             return false;
         }
 
-        var configuredBaseUrl = configuration["Telegram:BaseUrl"];
-        var baseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
-            ? "https://api.telegram.org"
-            : configuredBaseUrl.Trim().TrimEnd('/');
-
-        var requestUri = baseUrl.EndsWith("/bot", StringComparison.OrdinalIgnoreCase)
-            ? $"{baseUrl}{botToken}/sendMessage"
-            : $"{baseUrl}/bot{botToken}/sendMessage";
-
-        var payload = new TelegramSendMessageRequest(telegramUserId, text);
+        var requestUri = BuildBotApiUri(botToken, "sendMessage");
+        var payload = new TelegramSendMessageRequest(telegramUserId, text, replyMarkup);
 
         try
         {
@@ -176,7 +286,35 @@ public sealed class TelegramBotClient(
         }
     }
 
+    private string BuildBotApiUri(string botToken, string method)
+    {
+        var configuredBaseUrl = configuration["Telegram:BaseUrl"];
+        var baseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
+            ? "https://api.telegram.org"
+            : configuredBaseUrl.Trim().TrimEnd('/');
+
+        return baseUrl.EndsWith("/bot", StringComparison.OrdinalIgnoreCase)
+            ? $"{baseUrl}{botToken}/{method}"
+            : $"{baseUrl}/bot{botToken}/{method}";
+    }
+
     private sealed record TelegramSendMessageRequest(
         [property: JsonPropertyName("chat_id")] long ChatId,
-        [property: JsonPropertyName("text")] string Text);
+        [property: JsonPropertyName("text")] string Text,
+        [property: JsonPropertyName("reply_markup")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        TelegramReplyMarkup? ReplyMarkup = null);
+
+    private sealed record TelegramSetMyCommandsRequest(
+        [property: JsonPropertyName("commands")] IReadOnlyList<TelegramBotCommand> Commands);
+
+    private sealed record TelegramGetUpdatesRequest(
+        [property: JsonPropertyName("offset")] long Offset,
+        [property: JsonPropertyName("timeout")] int Timeout,
+        [property: JsonPropertyName("allowed_updates")] string[] AllowedUpdates);
+
+    private sealed record TelegramApiResponse<T>(
+        [property: JsonPropertyName("ok")] bool Ok,
+        [property: JsonPropertyName("result")] T? Result,
+        [property: JsonPropertyName("description")] string? Description);
 }

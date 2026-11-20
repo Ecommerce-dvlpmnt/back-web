@@ -12,6 +12,90 @@ namespace EcommerceBackend.Tests;
 public sealed class TelegramBotClientTests
 {
     [Fact]
+    public async Task GetUpdatesAsync_ParsesTelegramUpdatesAndSendsLongPollingRequest()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "ok": true,
+                      "result": [
+                        {
+                          "update_id": 100,
+                          "message": {
+                            "message_id": 5,
+                            "from": {
+                              "id": 777,
+                              "is_bot": false,
+                              "first_name": "Sasha",
+                              "username": "sasha"
+                            },
+                            "chat": {
+                              "id": 777,
+                              "type": "private"
+                            },
+                            "date": 1700000000,
+                            "text": "/start"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org/",
+                ["Telegram:BotToken"] = "123456:ABC-TestToken"
+            });
+
+        var updates = await client.GetUpdatesAsync(99, 10);
+
+        Assert.Single(updates);
+        Assert.Equal(100, updates[0].UpdateId);
+        Assert.Equal("/start", updates[0].Message?.Text);
+        Assert.Equal(777, updates[0].Message?.From?.Id);
+        Assert.Equal(HttpMethod.Post, handler.LastMethod);
+        Assert.Equal(
+            "https://api.telegram.org/bot123456:ABC-TestToken/getUpdates",
+            handler.LastRequestUri?.ToString());
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal(99, doc.RootElement.GetProperty("offset").GetInt64());
+        Assert.Equal(10, doc.RootElement.GetProperty("timeout").GetInt32());
+        Assert.Equal("message", doc.RootElement.GetProperty("allowed_updates")[0].GetString());
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_SendsMessageToChat()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org",
+                ["Telegram:BotToken"] = "123456:ABC-TestToken"
+            });
+
+        var sent = await client.SendMessageAsync(777, "Hello");
+
+        Assert.True(sent);
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal(777, doc.RootElement.GetProperty("chat_id").GetInt64());
+        Assert.Equal("Hello", doc.RootElement.GetProperty("text").GetString());
+    }
+
+    [Fact]
     public async Task SendReferralRewardNotificationAsync_SendsPostRequestWithExpectedPayload()
     {
         var handler = new RecordingHttpMessageHandler(
