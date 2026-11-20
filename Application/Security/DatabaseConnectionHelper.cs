@@ -10,13 +10,14 @@ public static class DatabaseConnectionHelper
 {
     public static string ResolveConnectionString(IConfiguration configuration)
     {
-        // 1. Проверяем ConnectionStrings:Default в конфигурации (включая ConnectionStrings__Default в env vars)
-        var connectionString = configuration.GetConnectionString("Default");
+        // 1. Проверяем переменную DATABASE_URL (стандарт для Railway, Docker, Render, Heroku)
+        var connectionString = configuration["DATABASE_URL"]
+            ?? Environment.GetEnvironmentVariable("DATABASE_URL");
 
-        // 2. Если не найдено, проверяем переменную DATABASE_URL (стандарт для Supabase, Render, Railway, Docker, Heroku)
+        // 2. Если не найдено, проверяем ConnectionStrings:Default в конфигурации (включая ConnectionStrings__Default в env vars)
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            connectionString = configuration["DATABASE_URL"] ?? Environment.GetEnvironmentVariable("DATABASE_URL");
+            connectionString = configuration.GetConnectionString("Default");
         }
 
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -50,6 +51,27 @@ public static class DatabaseConnectionHelper
         var port = uri.Port > 0 ? uri.Port : 5432;
         var database = uri.AbsolutePath.TrimStart('/');
 
+        var sslMode = SslMode.Require;
+        if (host.EndsWith(".railway.internal", StringComparison.OrdinalIgnoreCase) ||
+            host is "localhost" or "127.0.0.1")
+        {
+            sslMode = SslMode.Prefer;
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.Query))
+        {
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            var ssl = query["sslmode"];
+            if (string.Equals(ssl, "disable", StringComparison.OrdinalIgnoreCase))
+                sslMode = SslMode.Disable;
+            else if (string.Equals(ssl, "prefer", StringComparison.OrdinalIgnoreCase))
+                sslMode = SslMode.Prefer;
+            else if (string.Equals(ssl, "allow", StringComparison.OrdinalIgnoreCase))
+                sslMode = SslMode.Allow;
+            else if (string.Equals(ssl, "require", StringComparison.OrdinalIgnoreCase))
+                sslMode = SslMode.Require;
+        }
+
         var builder = new NpgsqlConnectionStringBuilder
         {
             Host = host,
@@ -57,7 +79,7 @@ public static class DatabaseConnectionHelper
             Database = database,
             Username = username,
             Password = password,
-            SslMode = SslMode.Require,
+            SslMode = sslMode,
             Pooling = true
         };
 

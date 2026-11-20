@@ -720,6 +720,11 @@ public sealed class ReferralService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (request.Status is not (PayoutRequestStatus.Completed or PayoutRequestStatus.Rejected))
+        {
+            throw new ArgumentException("Статус обробки заявки має бути Completed або Rejected.", nameof(request));
+        }
+
         var ownsTransaction = dbContext.Database.CurrentTransaction is null;
         var transaction = ownsTransaction
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -776,7 +781,7 @@ public sealed class ReferralService(
                         partner.TelegramUserId,
                         payout.Amount,
                         MaskCardNumber(payout.CardNumber),
-                        cancellationToken);
+                        CancellationToken.None);
                 }
                 else if (request.Status == PayoutRequestStatus.Rejected)
                 {
@@ -784,7 +789,7 @@ public sealed class ReferralService(
                         partner.TelegramUserId,
                         payout.Amount,
                         request.AdminComment,
-                        cancellationToken);
+                        CancellationToken.None);
                 }
             }
 

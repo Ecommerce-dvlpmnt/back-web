@@ -132,12 +132,7 @@ public sealed class BotReferralsController(
         var expectedSecret = configuration["Telegram:BotSecret"]
             ?? configuration["TELEGRAM_BOT_SECRET"];
 
-        if (string.IsNullOrWhiteSpace(expectedSecret))
-        {
-            return true;
-        }
-
-        if (string.IsNullOrEmpty(providedSecret))
+        if (string.IsNullOrWhiteSpace(expectedSecret) || string.IsNullOrEmpty(providedSecret))
         {
             return false;
         }

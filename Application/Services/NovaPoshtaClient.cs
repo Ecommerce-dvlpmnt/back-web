@@ -82,36 +82,64 @@ public sealed class NovaPoshtaClient(
         NovaPoshtaRequest<TProperties> request,
         CancellationToken cancellationToken)
     {
-        using var response = await httpClient.PostAsJsonAsync(
-            BaseUrl,
-            request,
-            cancellationToken);
-
-        response.EnsureSuccessStatusCode();
-
-        var result = await response.Content.ReadFromJsonAsync<NovaPoshtaResult<T>>(cancellationToken);
-        if (result is null)
+        try
         {
-            logger.LogWarning(
-                "Нова Пошта повернула порожню відповідь для методу {Method}.",
-                request.CalledMethod);
+            using var response = await httpClient.PostAsJsonAsync(
+                BaseUrl,
+                request,
+                cancellationToken);
 
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Нова Пошта повернула HTTP {StatusCode} для {Method}.",
+                    (int)response.StatusCode,
+                    request.CalledMethod);
+
+                return new NovaPoshtaResult<T>
+                {
+                    Success = false,
+                    Errors = ["Сервіс Нової Пошти тимчасово недоступний. Спробуйте пізніше."]
+                };
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<NovaPoshtaResult<T>>(cancellationToken);
+            if (result is null)
+            {
+                logger.LogWarning(
+                    "Нова Пошта повернула порожню відповідь для методу {Method}.",
+                    request.CalledMethod);
+
+                return new NovaPoshtaResult<T>
+                {
+                    Success = false,
+                    Errors = ["Порожня відповідь Нової Пошти."]
+                };
+            }
+
+            if (!result.Success)
+            {
+                logger.LogWarning(
+                    "Нова Пошта повернула помилку для методу {Method}: {Errors}.",
+                    request.CalledMethod,
+                    string.Join("; ", result.Errors));
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка зв'язку з API Нової Пошти для {Method}.", request.CalledMethod);
             return new NovaPoshtaResult<T>
             {
                 Success = false,
-                Errors = ["Порожня відповідь Нової Пошти."]
+                Errors = ["Не вдалося отримати дані від Нової Пошти. Спробуйте пізніше."]
             };
         }
-
-        if (!result.Success)
-        {
-            logger.LogWarning(
-                "Нова Пошта повернула помилку для методу {Method}: {Errors}.",
-                request.CalledMethod,
-                string.Join("; ", result.Errors));
-        }
-
-        return result;
     }
 
     private sealed record NovaPoshtaRequest<TProperties>(

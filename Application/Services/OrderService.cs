@@ -148,7 +148,7 @@ public sealed class OrderService(
                         order.ReferralRewardAmount,
                         partner.TotalEarned,
                         ReferralRewardStatus.Pending),
-                    cancellationToken);
+                    CancellationToken.None);
             }
         }
 
@@ -263,7 +263,7 @@ public sealed class OrderService(
         var cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
         if (cancelledReward is not null)
         {
-            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, "скасовано клієнтом", cancellationToken);
+            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, "скасовано клієнтом", CancellationToken.None);
         }
 
         logger?.LogInformation(
@@ -420,7 +420,7 @@ public sealed class OrderService(
             var reward = await referralService.ProcessDeliveredOrderRewardAsync(order.Id, cancellationToken);
             if (reward is not null)
             {
-                _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(reward, cancellationToken);
+                _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(reward, CancellationToken.None);
             }
         }
         else if (newStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
@@ -434,7 +434,7 @@ public sealed class OrderService(
                     OrderStatus.Returned => "повернення товару",
                     _ => "скасовано"
                 };
-                _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(reward, reason, cancellationToken);
+                _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(reward, reason, CancellationToken.None);
             }
         }
 

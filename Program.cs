@@ -13,6 +13,7 @@ using EcommerceBackend.Infrastructure.Storage;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -41,11 +42,15 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-var allowedOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>()
-    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
-    .ToArray() ?? [];
+var rawEnvOrigins = builder.Configuration["CORS_ALLOWED_ORIGINS"]
+    ?? builder.Configuration["Cors:AllowedOriginsString"];
+
+var allowedOrigins = (rawEnvOrigins != null
+    ? rawEnvOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    : builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct()
+    .ToArray();
 var defaultOrigins = new[] { "http://localhost:3000", "http://localhost:5173" };
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
@@ -72,6 +77,13 @@ dataSourceBuilder.MapEnum<PaymentStatus>("payment_status", nameTranslator);
 dataSourceBuilder.MapEnum<ShipmentStatus>("shipment_status", nameTranslator);
 dataSourceBuilder.MapEnum<ReviewStatus>("review_status", nameTranslator);
 var dataSource = dataSourceBuilder.Build();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddSingleton<NpgsqlDataSource>(_ => dataSource);
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
@@ -184,13 +196,13 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ICurrencyRateService, NbuCurrencyRateService>();
 builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(60);
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddHttpClient(TelegramBotClient.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
-builder.Services.AddScoped<ITelegramBotClient, TelegramBotClient>();
+builder.Services.AddSingleton<ITelegramBotClient, TelegramBotClient>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -302,6 +314,8 @@ if (swaggerEnabled)
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "EcommerceBackend v1");
     });
 }
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {

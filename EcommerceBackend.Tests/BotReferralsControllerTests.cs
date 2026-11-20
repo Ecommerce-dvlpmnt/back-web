@@ -25,6 +25,17 @@ public sealed class BotReferralsControllerTests
     }
 
     [Fact]
+    public async Task GetProfile_ReturnsUnauthorized_WhenServerSecretIsNotConfigured()
+    {
+        var fakeReferralService = new FakeReferralService();
+        var controller = CreateController(fakeReferralService, string.Empty);
+
+        var result = await controller.GetProfile(12345L, "any-secret", CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(result.Result);
+    }
+
+    [Fact]
     public async Task GetProfile_ReturnsNotFound_WhenPartnerDoesNotExist()
     {
         var fakeReferralService = new FakeReferralService();
