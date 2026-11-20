@@ -255,16 +255,48 @@ public sealed class ReferralService(
             .ToListAsync(cancellationToken);
 
         var partnerIds = partners.Select(p => p.Id).ToArray();
-        var pendingAmounts = await dbContext.Orders
-            .AsNoTracking()
-            .Where(o => o.ReferrerId.HasValue
-                && partnerIds.Contains(o.ReferrerId.Value)
-                && o.ReferralRewardStatus == ReferralRewardStatus.Pending)
-            .GroupBy(o => o.ReferrerId!.Value)
-            .Select(g => new { PartnerId = g.Key, PendingSum = g.Sum(x => x.ReferralRewardAmount) })
-            .ToDictionaryAsync(x => x.PartnerId, x => x.PendingSum, cancellationToken);
 
-        return partners.Select(p => MapToPartnerResponse(p, pendingAmounts.GetValueOrDefault(p.Id, 0m))).ToArray();
+        var orderStats = await dbContext.Orders
+            .AsNoTracking()
+            .Where(o => o.ReferrerId.HasValue && partnerIds.Contains(o.ReferrerId.Value))
+            .GroupBy(o => o.ReferrerId!.Value)
+            .Select(g => new
+            {
+                PartnerId = g.Key,
+                PendingSum = g.Where(x => x.ReferralRewardStatus == ReferralRewardStatus.Pending).Sum(x => x.ReferralRewardAmount),
+                TotalOrders = g.Count(),
+                DeliveredOrders = g.Count(x => x.OrderStatus == OrderStatus.Delivered),
+                TotalTurnover = g.Where(x => x.OrderStatus != OrderStatus.Cancelled && x.OrderStatus != OrderStatus.Refused).Sum(x => x.TotalPrice)
+            })
+            .ToDictionaryAsync(x => x.PartnerId, cancellationToken);
+
+        var payouts = await dbContext.PartnerPayoutRequests
+            .AsNoTracking()
+            .Where(p => partnerIds.Contains(p.PartnerId) && p.Status != PayoutRequestStatus.Rejected)
+            .GroupBy(p => p.PartnerId)
+            .Select(g => new { PartnerId = g.Key, PaidOrPendingSum = g.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.PartnerId, x => x.PaidOrPendingSum, cancellationToken);
+
+        return partners.Select(p =>
+        {
+            var stats = orderStats.GetValueOrDefault(p.Id);
+            var paidOrPending = payouts.GetValueOrDefault(p.Id, 0m);
+            var availableBalance = Math.Max(0m, p.TotalEarned - paidOrPending);
+
+            return new PartnerResponse(
+                p.Id,
+                p.TelegramUserId,
+                p.Name,
+                p.ReferralCode,
+                p.CommissionPercent,
+                p.TotalEarned,
+                p.CreatedAt,
+                stats?.PendingSum ?? 0m,
+                availableBalance,
+                stats?.TotalOrders ?? 0,
+                stats?.DeliveredOrders ?? 0,
+                stats?.TotalTurnover ?? 0m);
+        }).ToArray();
     }
 
     public async Task<PartnerResponse?> GetPartnerByIdAsync(
@@ -280,12 +312,42 @@ public sealed class ReferralService(
             return null;
         }
 
-        var pendingSum = await dbContext.Orders
+        var orders = await dbContext.Orders
             .AsNoTracking()
-            .Where(o => o.ReferrerId == partner.Id && o.ReferralRewardStatus == ReferralRewardStatus.Pending)
-            .SumAsync(o => o.ReferralRewardAmount, cancellationToken);
+            .Where(o => o.ReferrerId == partner.Id)
+            .Select(o => new { o.OrderStatus, o.ReferralRewardStatus, o.ReferralRewardAmount, o.TotalPrice })
+            .ToListAsync(cancellationToken);
 
-        return MapToPartnerResponse(partner, pendingSum);
+        var pendingSum = orders
+            .Where(o => o.ReferralRewardStatus == ReferralRewardStatus.Pending)
+            .Sum(o => o.ReferralRewardAmount);
+
+        var totalOrders = orders.Count;
+        var deliveredOrders = orders.Count(o => o.OrderStatus == OrderStatus.Delivered);
+        var totalTurnover = orders
+            .Where(o => o.OrderStatus != OrderStatus.Cancelled && o.OrderStatus != OrderStatus.Refused)
+            .Sum(o => o.TotalPrice);
+
+        var paidOrPendingPayouts = await dbContext.PartnerPayoutRequests
+            .AsNoTracking()
+            .Where(p => p.PartnerId == partner.Id && p.Status != PayoutRequestStatus.Rejected)
+            .SumAsync(p => p.Amount, cancellationToken);
+
+        var availableBalance = Math.Max(0m, partner.TotalEarned - paidOrPendingPayouts);
+
+        return new PartnerResponse(
+            partner.Id,
+            partner.TelegramUserId,
+            partner.Name,
+            partner.ReferralCode,
+            partner.CommissionPercent,
+            partner.TotalEarned,
+            partner.CreatedAt,
+            pendingSum,
+            availableBalance,
+            totalOrders,
+            deliveredOrders,
+            totalTurnover);
     }
 
     public async Task<PartnerResponse> CreatePartnerAsync(
@@ -340,6 +402,55 @@ public sealed class ReferralService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return MapToPartnerResponse(partner, 0m);
+    }
+
+    public async Task<PartnerResponse> UpdatePartnerAsync(
+        Guid id,
+        UpdateReferralPartnerRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var partner = await dbContext.Partners
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (partner is null)
+        {
+            throw new KeyNotFoundException($"Реферала з ID '{id}' не знайдено.");
+        }
+
+        if (request.CommissionPercent.HasValue)
+        {
+            if (request.CommissionPercent.Value <= 0 || request.CommissionPercent.Value > 100)
+            {
+                throw new ArgumentException("Комісійний відсоток має бути від 0.01% до 100%.", nameof(request));
+            }
+            partner.CommissionPercent = request.CommissionPercent.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            partner.Name = request.Name.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReferralCode))
+        {
+            var normalizedCode = request.ReferralCode.Trim().ToUpperInvariant();
+            var duplicate = await dbContext.Partners
+                .AnyAsync(p => p.Id != id && p.ReferralCode.ToUpper() == normalizedCode, cancellationToken);
+
+            if (duplicate)
+            {
+                throw new InvalidOperationException($"Реферальний код '{normalizedCode}' вже використовується іншим партнером.");
+            }
+
+            partner.ReferralCode = normalizedCode;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return await GetPartnerByIdAsync(id, cancellationToken)
+            ?? MapToPartnerResponse(partner, 0m);
     }
 
     public async Task<ReferralCodeValidationResponse> ValidateCodeAsync(

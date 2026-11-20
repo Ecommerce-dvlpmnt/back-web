@@ -38,6 +38,11 @@ public interface IReferralService
         CreatePartnerRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<PartnerResponse> UpdatePartnerAsync(
+        Guid id,
+        UpdateReferralPartnerRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ReferralCodeValidationResponse> ValidateCodeAsync(
         string? referralCode,
         CancellationToken cancellationToken = default);

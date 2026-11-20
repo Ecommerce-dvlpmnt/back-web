@@ -396,6 +396,9 @@ public sealed class ReferralLifecycleScenarioTests
         public Task<PartnerResponse> CreatePartnerAsync(CreatePartnerRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PartnerResponse(Guid.NewGuid(), 1, "P", "REF", 5m, 0m, DateTime.UtcNow, 0m));
 
+        public Task<PartnerResponse> UpdatePartnerAsync(Guid id, UpdateReferralPartnerRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PartnerResponse(id, 1, request.Name ?? "P", request.ReferralCode ?? "REF", request.CommissionPercent ?? 5m, 0m, DateTime.UtcNow, 0m));
+
         public Task<ReferralCodeValidationResponse> ValidateCodeAsync(string? referralCode, CancellationToken cancellationToken = default) =>
             Task.FromResult(new ReferralCodeValidationResponse(true, "REF", "Partner"));
 

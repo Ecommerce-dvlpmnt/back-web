@@ -281,6 +281,19 @@ public sealed class TelegramBotCommandHandlerTests
                 0m,
                 DateTime.UtcNow));
 
+        public Task<PartnerResponse> UpdatePartnerAsync(
+            Guid id,
+            UpdateReferralPartnerRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PartnerResponse(
+                id,
+                1001L,
+                request.Name ?? "Partner",
+                request.ReferralCode ?? "REF",
+                request.CommissionPercent ?? 5m,
+                0m,
+                DateTime.UtcNow));
+
         public Task<ReferralCodeValidationResponse> ValidateCodeAsync(
             string? referralCode,
             CancellationToken cancellationToken = default) =>

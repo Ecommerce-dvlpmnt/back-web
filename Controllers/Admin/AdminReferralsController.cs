@@ -50,6 +50,22 @@ public sealed class AdminReferralsController(IReferralService referralService) :
         return CreatedAtAction(nameof(GetPartnerById), new { id = created.Id }, created);
     }
 
+    [HttpPatch("partners/{id:guid}")]
+    [ProducesResponseType(typeof(PartnerResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<PartnerResponse>> UpdatePartner(
+        Guid id,
+        [FromBody] UpdateReferralPartnerRequest request,
+        CancellationToken cancellationToken)
+    {
+        var updated = await referralService.UpdatePartnerAsync(id, request, cancellationToken);
+        return Ok(updated);
+    }
+
     [HttpGet("payouts")]
     [ProducesResponseType(typeof(IReadOnlyList<AdminPayoutResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

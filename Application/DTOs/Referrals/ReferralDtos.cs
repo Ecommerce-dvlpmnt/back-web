@@ -39,7 +39,24 @@ public sealed record PartnerResponse(
     decimal CommissionPercent,
     decimal TotalEarned,
     DateTime CreatedAt,
-    decimal PendingBalance = 0m);
+    decimal PendingBalance = 0m,
+    decimal AvailableBalance = 0m,
+    int TotalOrders = 0,
+    int DeliveredOrders = 0,
+    decimal TotalTurnover = 0m);
+
+public sealed record UpdateReferralPartnerRequest
+{
+    [Range(0.01, 100)]
+    public decimal? CommissionPercent { get; init; }
+
+    [StringLength(100, MinimumLength = 2)]
+    public string? Name { get; init; }
+
+    [StringLength(32, MinimumLength = 2)]
+    [RegularExpression(@"^[A-Za-z0-9_-]+$")]
+    public string? ReferralCode { get; init; }
+}
 
 public sealed record ReferralCodeValidationResponse(
     bool IsValid,
