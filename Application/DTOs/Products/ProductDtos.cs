@@ -10,6 +10,18 @@ public sealed class ProductImageDto
     public int SortOrder { get; set; }
 }
 
+public sealed class ProductVariantDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+    public decimal? OldPrice { get; set; }
+    public string Height { get; set; } = string.Empty;
+    public bool InStock { get; set; }
+    public bool IsCurrent { get; set; }
+}
+
 public sealed class PublicProductDto
 {
     public Guid Id { get; set; }
@@ -31,6 +43,7 @@ public sealed class PublicProductDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ProductImageDto> Images { get; set; } = [];
+    public List<ProductVariantDto> Variants { get; set; } = [];
 }
 
 public sealed class ProductDto
@@ -56,6 +69,7 @@ public sealed class ProductDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ProductImageDto> Images { get; set; } = [];
+    public List<ProductVariantDto> Variants { get; set; } = [];
 }
 
 public sealed class CreateProductImageDto

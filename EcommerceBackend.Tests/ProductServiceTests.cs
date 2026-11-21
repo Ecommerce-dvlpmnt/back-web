@@ -49,6 +49,68 @@ public sealed class ProductServiceTests
     }
 
     [Fact]
+    public async Task GetPublicBySlugAsync_PopulatesVariantsSortedByHeight()
+    {
+        var repo = new FakeProductRepository();
+        var tree1 = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "TREE-180",
+            Name = "Лита ялинка Royal 1.8 м",
+            Slug = "lyta-yalynka-royal-1-8-m",
+            Price = 3500m,
+            Stock = 10,
+            IsActive = true
+        };
+        var tree2 = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "TREE-150",
+            Name = "Лита ялинка Royal 1.5 м",
+            Slug = "lyta-yalynka-royal-1-5-m",
+            Price = 2500m,
+            Stock = 5,
+            IsActive = true
+        };
+        var tree3 = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "TREE-210",
+            Name = "Лита ялинка Royal 2.1 м",
+            Slug = "lyta-yalynka-royal-2-1-m",
+            Price = 4500m,
+            Stock = 8,
+            IsActive = true
+        };
+
+        tree1.RelatedLinks.Add(new ProductRelated { ProductId = tree1.Id, RelatedProductId = tree2.Id, RelatedProduct = tree2 });
+        tree1.RelatedLinks.Add(new ProductRelated { ProductId = tree1.Id, RelatedProductId = tree3.Id, RelatedProduct = tree3 });
+
+        repo.Products[tree1.Id] = tree1;
+        repo.Products[tree2.Id] = tree2;
+        repo.Products[tree3.Id] = tree3;
+
+        var service = new ProductService(repo, new FakeImageStorageService(), new FakeAuditLogService());
+
+        var result = await service.GetPublicBySlugAsync(tree1.Slug);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Variants.Count);
+        // Should be sorted 1.5m, 1.8m, 2.1m
+        Assert.Equal("1.5 м", result.Variants[0].Height);
+        Assert.False(result.Variants[0].IsCurrent);
+        Assert.Equal(2500m, result.Variants[0].Price);
+
+        Assert.Equal("1.8 м", result.Variants[1].Height);
+        Assert.True(result.Variants[1].IsCurrent);
+        Assert.Equal(3500m, result.Variants[1].Price);
+
+        Assert.Equal("2.1 м", result.Variants[2].Height);
+        Assert.False(result.Variants[2].IsCurrent);
+        Assert.Equal(4500m, result.Variants[2].Price);
+    }
+
+    [Fact]
     public async Task GetPublicByIdAsync_ReturnsNullWhenProductIsInactive()
     {
         var repo = new FakeProductRepository();

@@ -181,5 +181,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         dbContext.Products
             .AsNoTracking()
             .Include(product => product.Category)
-            .Include(product => product.Images.OrderBy(image => image.SortOrder));
+            .Include(product => product.Images.OrderBy(image => image.SortOrder))
+            .Include(product => product.RelatedLinks)
+                .ThenInclude(r => r.RelatedProduct);
 }
