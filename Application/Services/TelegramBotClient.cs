@@ -335,6 +335,46 @@ public sealed class TelegramBotClient(
         }
     }
 
+    public async Task<bool> DeleteMessageAsync(
+        long chatId,
+        long messageId,
+        CancellationToken cancellationToken = default)
+    {
+        if (chatId <= 0 || messageId <= 0)
+        {
+            return false;
+        }
+
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "deleteMessage"),
+                new TelegramDeleteMessageRequest(chatId, messageId),
+                timeoutCts.Token);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Помилка при видаленні повідомлення {MessageId} у чаті {ChatId}.", messageId, chatId);
+            return false;
+        }
+    }
+
     public async Task<bool> SendAdminNewOrderNotificationAsync(
         AdminBotOrderNotificationDto order,
         CancellationToken cancellationToken = default)
@@ -584,6 +624,10 @@ public sealed class TelegramBotClient(
         [property: JsonPropertyName("text")]
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Text = null);
+
+    private sealed record TelegramDeleteMessageRequest(
+        [property: JsonPropertyName("chat_id")] long ChatId,
+        [property: JsonPropertyName("message_id")] long MessageId);
 
     private sealed record TelegramSetMyCommandsRequest(
         [property: JsonPropertyName("commands")] IReadOnlyList<TelegramBotCommand> Commands);

@@ -640,6 +640,11 @@ public sealed class TelegramBotCommandHandler(
             }
         }
 
+        rows.Add(
+        [
+            new TelegramInlineKeyboardButton("❌ Закрити", "ord_close")
+        ]);
+
         var markup = new TelegramInlineKeyboardMarkup(rows);
         if (messageId is > 0)
         {
@@ -663,7 +668,8 @@ public sealed class TelegramBotCommandHandler(
         var backMarkup = new TelegramInlineKeyboardMarkup(
         [
             [
-                new TelegramInlineKeyboardButton("🔙 Назад до списку замовлень", $"ord_list:{filter}:{page}")
+                new TelegramInlineKeyboardButton("🔙 До списку", $"ord_list:{filter}:{page}"),
+                new TelegramInlineKeyboardButton("❌ Закрити", "ord_close")
             ]
         ]);
 
@@ -795,17 +801,16 @@ public sealed class TelegramBotCommandHandler(
             }
         }
 
-        if (activeButtons.Count > 0)
-        {
-            await telegramBotClient.SendMessageWithInlineKeyboardAsync(
-                chatId,
-                builder.ToString(),
-                new TelegramInlineKeyboardMarkup(activeButtons),
-                cancellationToken);
-            return;
-        }
+        activeButtons.Add(
+        [
+            new TelegramInlineKeyboardButton("❌ Закрити", "promo_close")
+        ]);
 
-        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+        await telegramBotClient.SendMessageWithInlineKeyboardAsync(
+            chatId,
+            builder.ToString(),
+            new TelegramInlineKeyboardMarkup(activeButtons),
+            cancellationToken);
     }
 
     private async Task StartAdminCreatePromoAsync(long chatId, long adminTelegramUserId, CancellationToken cancellationToken)
@@ -813,9 +818,17 @@ public sealed class TelegramBotCommandHandler(
         CleanupExpiredStates();
         AdminPromoStates[adminTelegramUserId] = new AdminPromoCreationState();
 
-        await SendAdminAsync(
+        var cancelMarkup = new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("❌ Скасувати створення", "promo_create_cancel")
+            ]
+        ]);
+
+        await telegramBotClient.SendMessageWithInlineKeyboardAsync(
             chatId,
             "🎟 <b>Створення промокоду для рідних/знайомих (Крок 1 з 3)</b>\n\nВведіть назву промокоду (наприклад: <code>FAMILY15</code>, <code>BRO20</code>) або напишіть <code>авто</code> для автоматичної генерації (чи /cancel):",
+            cancelMarkup,
             cancellationToken);
     }
 
@@ -958,6 +971,46 @@ public sealed class TelegramBotCommandHandler(
 
         var chatId = callbackQuery.Message?.Chat?.Id ?? user.Id;
 
+        if (data is "ord_close" or "promo_close" or "msg_close")
+        {
+            await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Закрито", cancellationToken);
+            if (callbackQuery.Message?.MessageId is { } msgId)
+            {
+                var deleted = await telegramBotClient.DeleteMessageAsync(chatId, msgId, cancellationToken);
+                if (!deleted)
+                {
+                    await telegramBotClient.EditMessageTextAsync(
+                        chatId,
+                        msgId,
+                        "<i>Вікно закрито.</i>",
+                        inlineMarkup: null,
+                        cancellationToken);
+                }
+            }
+            return;
+        }
+
+        if (data is "promo_create_cancel")
+        {
+            AdminPromoStates.TryRemove(user.Id, out _);
+            await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Створення скасовано.", cancellationToken);
+            if (callbackQuery.Message?.MessageId is { } msgId)
+            {
+                var deleted = await telegramBotClient.DeleteMessageAsync(chatId, msgId, cancellationToken);
+                if (!deleted)
+                {
+                    await telegramBotClient.EditMessageTextAsync(
+                        chatId,
+                        msgId,
+                        "<i>Створення промокоду скасовано.</i>",
+                        inlineMarkup: null,
+                        cancellationToken);
+                }
+            }
+            await SendAdminAsync(chatId, "Створення промокоду скасовано.", cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("payout_ok:", StringComparison.OrdinalIgnoreCase)
             || data.StartsWith("payout_no:", StringComparison.OrdinalIgnoreCase))
         {
@@ -984,6 +1037,22 @@ public sealed class TelegramBotCommandHandler(
                     callbackQuery.Id,
                     approve ? "✅ Виплату підтверджено!" : "❌ Заявку відхилено.",
                     cancellationToken);
+
+                if (callbackQuery.Message?.MessageId is { } msgId)
+                {
+                    var updatedText = (callbackQuery.Message.Text ?? string.Empty)
+                        + "\n\n"
+                        + (approve
+                            ? "✅ <b>Заявку підтверджено та позначено як виплачену.</b>"
+                            : "❌ <b>Заявку відхилено (кошти повернуто на баланс).</b>");
+
+                    await telegramBotClient.EditMessageTextAsync(
+                        chatId,
+                        msgId,
+                        updatedText,
+                        inlineMarkup: null,
+                        cancellationToken);
+                }
 
                 var statusMsg = approve
                     ? $"✅ Виплату <b>{Money(updated.Amount)} грн</b> для <b>{Html(updated.PartnerName)}</b> (<code>{Html(updated.PartnerReferralCode)}</code>) позначено як <b>ВИПЛАЧЕНО</b>."

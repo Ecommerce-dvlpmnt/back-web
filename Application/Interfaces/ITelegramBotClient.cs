@@ -77,6 +77,12 @@ public interface ITelegramBotClient
         CancellationToken cancellationToken = default) =>
         Task.FromResult(true);
 
+    Task<bool> DeleteMessageAsync(
+        long chatId,
+        long messageId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
+
     Task<bool> SendAdminNewOrderNotificationAsync(
         AdminBotOrderNotificationDto order,
         CancellationToken cancellationToken = default) =>

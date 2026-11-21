@@ -375,6 +375,220 @@ public sealed class TelegramBotCommandHandlerTests
         Assert.Contains("ВИПЛАЧЕНО", telegramClient.Messages[^1].Text);
     }
 
+    [Fact]
+    public async Task AdminOrders_ListContainsCloseButton_AndCallbackDeletesMessage()
+    {
+        var referralService = new FakeReferralService
+        {
+            AdminOrders =
+            [
+                new AdminBotOrderNotificationDto(
+                    Guid.NewGuid(),
+                    1001,
+                    "ord_1001",
+                    "Client",
+                    "+380501112233",
+                    "Kyiv",
+                    "Warehouse 1",
+                    PaymentMethod.CashOnDelivery,
+                    OrderStatus.New,
+                    1000m,
+                    0m,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0m,
+                    DateTime.UtcNow,
+                    [])
+            ]
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "📦 Замовлення"));
+
+        Assert.NotEmpty(telegramClient.InlineMarkups);
+        var markup = telegramClient.InlineMarkups[^1];
+        Assert.NotNull(markup);
+        var allButtons = markup!.InlineKeyboard.SelectMany(row => row).ToList();
+        Assert.Contains(allButtons, b => b.Text.Contains("Закрити") && b.CallbackData == "ord_close");
+
+        var closeCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_close",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                new TelegramMessage(
+                    42,
+                    new TelegramUser(777001, false, "Admin", null, "admin", null),
+                    new TelegramChat(777001, "private"),
+                    0,
+                    "📦 Замовлення"),
+                "ord_close"));
+
+        await handler.HandleUpdateAsync(closeCallback);
+        Assert.Contains(telegramClient.DeletedMessages, d => d.ChatId == 777001 && d.MessageId == 42);
+    }
+
+    [Fact]
+    public async Task AdminOrderDetail_ContainsBackAndCloseButtons()
+    {
+        var referralService = new FakeReferralService
+        {
+            AdminOrders =
+            [
+                new AdminBotOrderNotificationDto(
+                    Guid.NewGuid(),
+                    1005,
+                    "ord_1005",
+                    "Client",
+                    "+380501112233",
+                    "Kyiv",
+                    "Warehouse 1",
+                    PaymentMethod.CashOnDelivery,
+                    OrderStatus.New,
+                    1500m,
+                    0m,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0m,
+                    DateTime.UtcNow,
+                    [])
+            ]
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        var viewCallback = new TelegramUpdate(
+            1,
+            null,
+            new TelegramCallbackQuery(
+                "cb_view",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                new TelegramMessage(
+                    43,
+                    new TelegramUser(777001, false, "Admin", null, "admin", null),
+                    new TelegramChat(777001, "private"),
+                    0,
+                    "📦 Замовлення"),
+                "ord_view:1005:today:0"));
+
+        await handler.HandleUpdateAsync(viewCallback);
+
+        var edit = telegramClient.EditedMessages.FirstOrDefault(e => e.MessageId == 43);
+        Assert.NotNull(edit.Markup);
+        var buttons = edit.Markup!.InlineKeyboard.SelectMany(r => r).ToList();
+        Assert.Contains(buttons, b => b.Text.Contains("До списку") && b.CallbackData.StartsWith("ord_list:"));
+        Assert.Contains(buttons, b => b.Text.Contains("Закрити") && b.CallbackData == "ord_close");
+    }
+
+    [Fact]
+    public async Task AdminPromoCodes_ContainsCloseButton_AndDeletesOnClose()
+    {
+        var referralService = new FakeReferralService
+        {
+            PromoCodes =
+            [
+                new PromoCodeResponse(Guid.NewGuid(), "TEST10", 10m, null, 0, true, 777001, DateTime.UtcNow)
+            ]
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "🎟 Промокоди"));
+
+        Assert.NotEmpty(telegramClient.InlineMarkups);
+        var markup = telegramClient.InlineMarkups[^1];
+        Assert.NotNull(markup);
+        var buttons = markup!.InlineKeyboard.SelectMany(r => r).ToList();
+        Assert.Contains(buttons, b => b.Text.Contains("Закрити") && b.CallbackData == "promo_close");
+
+        var closeCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_promo_close",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                new TelegramMessage(
+                    99,
+                    new TelegramUser(777001, false, "Admin", null, "admin", null),
+                    new TelegramChat(777001, "private"),
+                    0,
+                    "🎟 Промокоди"),
+                "promo_close"));
+
+        await handler.HandleUpdateAsync(closeCallback);
+        Assert.Contains(telegramClient.DeletedMessages, d => d.ChatId == 777001 && d.MessageId == 99);
+    }
+
+    [Fact]
+    public async Task AdminPromoCreation_HasCancelInlineButton_AndCancelsOnCallback()
+    {
+        var referralService = new FakeReferralService();
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        await handler.HandleUpdateAsync(CreateUpdate(777001, "➕ Створити промо"));
+
+        Assert.NotEmpty(telegramClient.InlineMarkups);
+        var markup = telegramClient.InlineMarkups[^1];
+        Assert.NotNull(markup);
+        var buttons = markup!.InlineKeyboard.SelectMany(r => r).ToList();
+        Assert.Contains(buttons, b => b.CallbackData == "promo_create_cancel");
+
+        var cancelCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_promo_cancel",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                new TelegramMessage(
+                    88,
+                    new TelegramUser(777001, false, "Admin", null, "admin", null),
+                    new TelegramChat(777001, "private"),
+                    0,
+                    "Крок 1"),
+                "promo_create_cancel"));
+
+        await handler.HandleUpdateAsync(cancelCallback);
+        Assert.Contains(telegramClient.DeletedMessages, d => d.ChatId == 777001 && d.MessageId == 88);
+        Assert.Contains("скасовано", telegramClient.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AdminPayoutApproval_EditsOriginalNotificationMessageToRemoveButtons()
+    {
+        var payoutId = Guid.NewGuid();
+        var referralService = new FakeReferralService();
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient, adminIds: "777001");
+
+        var adminCallback = new TelegramUpdate(
+            1,
+            null,
+            new TelegramCallbackQuery(
+                "cb_pay_ok",
+                new TelegramUser(777001, false, "Admin", null, "admin", null),
+                new TelegramMessage(
+                    77,
+                    new TelegramUser(777001, false, "Admin", null, "admin", null),
+                    new TelegramChat(777001, "private"),
+                    0,
+                    "💸 Заявка на виплату 500 грн"),
+                $"payout_ok:{payoutId:N}"));
+
+        await handler.HandleUpdateAsync(adminCallback);
+
+        var edit = telegramClient.EditedMessages.FirstOrDefault(e => e.MessageId == 77);
+        Assert.NotNull(edit.Text);
+        Assert.Null(edit.Markup); // inline markup removed!
+        Assert.Contains("підтверджено", edit.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static TelegramBotCommandHandler CreateHandler(
         FakeReferralService referralService,
         FakeTelegramBotClient telegramClient,
@@ -437,6 +651,10 @@ public sealed class TelegramBotCommandHandlerTests
     {
         public List<(long ChatId, string Text)> Messages { get; } = [];
         public List<TelegramReplyMarkup?> ReplyMarkups { get; } = [];
+        public List<TelegramInlineKeyboardMarkup?> InlineMarkups { get; } = [];
+        public List<(long ChatId, long MessageId)> DeletedMessages { get; } = [];
+        public List<(long ChatId, long MessageId, string Text, TelegramInlineKeyboardMarkup? Markup)> EditedMessages { get; } = [];
+        public List<(string QueryId, string? Text)> AnsweredCallbacks { get; } = [];
 
         public Task<IReadOnlyList<TelegramUpdate>> GetUpdatesAsync(
             long offset,
@@ -462,6 +680,47 @@ public sealed class TelegramBotCommandHandlerTests
         {
             Messages.Add((telegramUserId, text));
             ReplyMarkups.Add(replyMarkup);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> SendMessageWithInlineKeyboardAsync(
+            long telegramUserId,
+            string text,
+            TelegramInlineKeyboardMarkup inlineMarkup,
+            CancellationToken cancellationToken = default)
+        {
+            Messages.Add((telegramUserId, text));
+            ReplyMarkups.Add(null);
+            InlineMarkups.Add(inlineMarkup);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> EditMessageTextAsync(
+            long chatId,
+            long messageId,
+            string text,
+            TelegramInlineKeyboardMarkup? inlineMarkup = null,
+            CancellationToken cancellationToken = default)
+        {
+            EditedMessages.Add((chatId, messageId, text, inlineMarkup));
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> AnswerCallbackQueryAsync(
+            string callbackQueryId,
+            string? text = null,
+            CancellationToken cancellationToken = default)
+        {
+            AnsweredCallbacks.Add((callbackQueryId, text));
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> DeleteMessageAsync(
+            long chatId,
+            long messageId,
+            CancellationToken cancellationToken = default)
+        {
+            DeletedMessages.Add((chatId, messageId));
             return Task.FromResult(true);
         }
 
