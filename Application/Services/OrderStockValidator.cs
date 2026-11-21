@@ -11,6 +11,7 @@ public static class OrderStockValidator
         requestedQuantities
             .Where(item =>
                 !products.TryGetValue(item.Key, out var product) ||
+                !product.IsActive ||
                 product.Stock < item.Value)
             .Select(item =>
             {
@@ -19,7 +20,7 @@ public static class OrderStockValidator
                     item.Key,
                     product?.Name,
                     item.Value,
-                    product?.Stock ?? 0);
+                    product is { IsActive: true } ? product.Stock : 0);
             })
             .ToArray();
 }

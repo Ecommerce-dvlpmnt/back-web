@@ -109,6 +109,56 @@ public class SwaggerFilterTests
         Assert.Null(operation.Security);
     }
 
+    [Fact]
+    public void Admin_Orders_ConfirmPayment_Should_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(AdminOrdersController).GetMethod(nameof(AdminOrdersController.ConfirmPayment))!;
+        var context = CreateContext(typeof(AdminOrdersController), method, "api/admin/orders/{id}/confirm-payment");
+
+        _filter.Apply(operation, context);
+
+        Assert.NotNull(operation.Security);
+        Assert.Single(operation.Security);
+    }
+
+    [Fact]
+    public void Admin_Referrals_Partners_Should_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(AdminReferralsController).GetMethod(nameof(AdminReferralsController.CreatePartner))!;
+        var context = CreateContext(typeof(AdminReferralsController), method, "api/admin/referrals/partners");
+
+        _filter.Apply(operation, context);
+
+        Assert.NotNull(operation.Security);
+        Assert.Single(operation.Security);
+    }
+
+    [Fact]
+    public void Public_Referrals_Validate_Should_NOT_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(ReferralsController).GetMethod(nameof(ReferralsController.ValidateCode))!;
+        var context = CreateContext(typeof(ReferralsController), method, "api/referrals/validate/{referralCode}");
+
+        _filter.Apply(operation, context);
+
+        Assert.Null(operation.Security);
+    }
+
+    [Fact]
+    public void Payments_Webhook_Should_NOT_Have_Lock()
+    {
+        var operation = new OpenApiOperation();
+        var method = typeof(PaymentsController).GetMethod(nameof(PaymentsController.HandleWebhook))!;
+        var context = CreateContext(typeof(PaymentsController), method, "api/payments/webhook");
+
+        _filter.Apply(operation, context);
+
+        Assert.Null(operation.Security);
+    }
+
     private OperationFilterContext CreateContext(Type controllerType, MethodInfo method, string path)
     {
         var actionDescriptor = new ControllerActionDescriptor

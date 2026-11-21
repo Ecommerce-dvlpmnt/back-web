@@ -40,7 +40,7 @@ public sealed class SupplierServiceTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CreateAsync(new CreateSupplierDto { Name = "Global Decor" }));
 
-        Assert.Contains("already exists", exception.Message);
+        Assert.Contains("вже існує", exception.Message);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public sealed class SupplierServiceTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.DeleteAsync(existing.Id));
 
-        Assert.Contains("associated products or shipments", exception.Message);
+        Assert.Contains("пов'язані товари або відправлення", exception.Message);
     }
 
     private sealed class FakeSupplierRepository : ISupplierRepository

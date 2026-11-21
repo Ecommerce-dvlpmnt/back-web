@@ -12,7 +12,7 @@ namespace EcommerceBackend.Controllers.Admin;
 [Produces("application/json")]
 public sealed class AdminCategoriesController(ICategoryService categoryService) : ControllerBase
 {
-    /// <summary>Получить список всех категорий (включая неактивные).</summary>
+    /// <summary>Отримати список усіх категорій (включаючи неактивні).</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -24,7 +24,7 @@ public sealed class AdminCategoriesController(ICategoryService categoryService) 
         return Ok(await categoryService.GetAllAsync(onlyActive, cancellationToken));
     }
 
-    /// <summary>Получить категорию по ID.</summary>
+    /// <summary>Отримати категорію за ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -36,7 +36,7 @@ public sealed class AdminCategoriesController(ICategoryService categoryService) 
         return category is null ? NotFound() : Ok(category);
     }
 
-    /// <summary>Создать новую категорию.</summary>
+    /// <summary>Створити нову категорію.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -51,7 +51,7 @@ public sealed class AdminCategoriesController(ICategoryService categoryService) 
         return CreatedAtAction(nameof(GetById), new { id = category.Id }, category);
     }
 
-    /// <summary>Обновить существующую категорию.</summary>
+    /// <summary>Оновити існуючу категорію.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -68,7 +68,7 @@ public sealed class AdminCategoriesController(ICategoryService categoryService) 
         return category is null ? NotFound() : Ok(category);
     }
 
-    /// <summary>Удалить категорию.</summary>
+    /// <summary>Видалити категорію.</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

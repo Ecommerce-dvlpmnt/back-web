@@ -14,7 +14,7 @@ namespace EcommerceBackend.Controllers.Admin;
 public sealed class AdminReviewsController(IReviewService reviewService) : ControllerBase
 {
     /// <summary>
-    /// Список отзывов для модерации (все статусы: Pending, Approved, Rejected) с фильтрацией и пагинацией.
+    /// Список відгуків для модерації (всі статуси: Pending, Approved, Rejected) з фільтрацією та пагінацією.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<ReviewDto>), StatusCodes.Status200OK)]
@@ -40,7 +40,7 @@ public sealed class AdminReviewsController(IReviewService reviewService) : Contr
     }
 
     /// <summary>
-    /// Просмотр отзыва по ID со всеми деталями и метаданными.
+    /// Перегляд відгуку за ID з усіма деталями та метаданими.
     /// </summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ReviewDto), StatusCodes.Status200OK)]
@@ -56,7 +56,7 @@ public sealed class AdminReviewsController(IReviewService reviewService) : Contr
     }
 
     /// <summary>
-    /// Модерация отзыва: одобрение (Approved) для публикации на сайте или отклонение (Rejected) с комментарием.
+    /// Модерація відгуку: схвалення (Approved) для публікації на сайті або відхилення (Rejected) з коментарем.
     /// </summary>
     [HttpPatch("{id:guid}/status")]
     [ProducesResponseType(typeof(ReviewDto), StatusCodes.Status200OK)]
@@ -74,7 +74,7 @@ public sealed class AdminReviewsController(IReviewService reviewService) : Contr
     }
 
     /// <summary>
-    /// Удаление отзыва (для спама или некорректных записей).
+    /// Видалення відгуку (для спаму або некоректних записів).
     /// </summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

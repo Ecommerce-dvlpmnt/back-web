@@ -18,14 +18,13 @@ public sealed class ReviewService(
         // Если бот заполнил невидимое поле, отклоняем запрос.
         if (!string.IsNullOrWhiteSpace(request.Honeypot))
         {
-            throw new ArgumentException("Spam submission detected.");
+            throw new ArgumentException("Виявлено спам-активність.");
         }
 
-        // Проверяем существование товара, к которому пишется отзыв
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken);
         if (product is null)
         {
-            throw new KeyNotFoundException($"Product with ID '{request.ProductId}' was not found.");
+            throw new KeyNotFoundException($"Товар з ID '{request.ProductId}' не знайдено.");
         }
 
         var review = new Review

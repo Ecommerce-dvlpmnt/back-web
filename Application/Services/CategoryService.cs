@@ -73,7 +73,7 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (await categoryRepository.HasChildrenOrProductsAsync(id, cancellationToken))
-            throw new InvalidOperationException("Category has subcategories or products and cannot be deleted.");
+            throw new InvalidOperationException("Категорія має підкатегорії або товари і не може бути видалена.");
 
         return await categoryRepository.DeleteAsync(id, cancellationToken);
     }
@@ -87,7 +87,7 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
     private async Task EnsureUniqueAsync(string slug, Guid? excludeId, CancellationToken cancellationToken)
     {
         if (await ExistsBySlugAsync(slug, excludeId, cancellationToken))
-            throw new InvalidOperationException("A category with this slug already exists.");
+            throw new InvalidOperationException("Категорія з таким slug вже існує.");
     }
 
     private static string NormalizeFilterSchema(string? filterSchema)
@@ -102,7 +102,7 @@ public sealed class CategoryService(ICategoryRepository categoryRepository) : IC
         }
         catch (JsonException exception)
         {
-            throw new ArgumentException("FilterSchema must contain valid JSON.", nameof(filterSchema), exception);
+            throw new ArgumentException("FilterSchema повинен містити валідний JSON (valid JSON).", nameof(filterSchema), exception);
         }
     }
 

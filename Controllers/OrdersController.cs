@@ -12,7 +12,7 @@ namespace EcommerceBackend.Controllers;
 [Produces("application/json")]
 public sealed class OrdersController(IOrderService orderService) : ControllerBase
 {
-    /// <summary>Оформить заказ из корзины (публичный эндпоинт витрины).</summary>
+    /// <summary>Оформити замовлення з кошика (публічний ендпоінт вітрини).</summary>
     [HttpPost]
     [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
@@ -27,7 +27,7 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         return CreatedAtAction(nameof(GetByPublicId), new { publicId = order.PublicId }, order);
     }
 
-    /// <summary>Получить заказ по публичному коду (для страницы "Спасибо за заказ" на витрине).</summary>
+    /// <summary>Отримати замовлення за публічним кодом (для сторінки "Дякуємо за замовлення" на вітрині).</summary>
     [HttpGet("by-public-id/{publicId}")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

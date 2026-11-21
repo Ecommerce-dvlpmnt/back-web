@@ -42,3 +42,18 @@ public enum ReviewStatus
     Approved,
     Rejected
 }
+
+public enum ReferralRewardStatus
+{
+    None,
+    Pending,
+    Paid,
+    Cancelled
+}
+
+public enum PayoutRequestStatus
+{
+    Pending,
+    Completed,
+    Rejected
+}

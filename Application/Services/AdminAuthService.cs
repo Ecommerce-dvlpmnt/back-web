@@ -22,12 +22,12 @@ public sealed class AdminAuthService(
 
         if (admin is null || !passwordHasher.VerifyPassword(request.Password, admin.PasswordHash))
         {
-            throw new UnauthorizedAccessException("Неверный логин или пароль.");
+            throw new UnauthorizedAccessException("Невірний логін або пароль.");
         }
 
         if (!admin.IsActive)
         {
-            throw new UnauthorizedAccessException("Учётная запись администратора деактивирована.");
+            throw new UnauthorizedAccessException("Обліковий запис адміністратора деактивовано.");
         }
 
         var (token, expiresAt) = jwtTokenService.GenerateToken(admin);
@@ -53,7 +53,7 @@ public sealed class AdminAuthService(
         var exists = await dbContext.Admins.AnyAsync(a => a.Username.ToLower() == username.ToLower(), ct);
         if (exists)
         {
-            throw new InvalidOperationException($"Администратор с никнеймом '{request.Username}' уже существует.");
+            throw new InvalidOperationException($"Адміністратор з нікнеймом '{request.Username}' вже існує.");
         }
 
         var now = DateTime.UtcNow;
@@ -95,12 +95,12 @@ public sealed class AdminAuthService(
         var admin = await dbContext.Admins.FirstOrDefaultAsync(a => a.Id == adminId, ct);
         if (admin is null)
         {
-            throw new KeyNotFoundException("Администратор не найден.");
+            throw new KeyNotFoundException("Адміністратора не знайдено.");
         }
 
         if (!passwordHasher.VerifyPassword(request.CurrentPassword, admin.PasswordHash))
         {
-            throw new UnauthorizedAccessException("Текущий пароль указан неверно.");
+            throw new UnauthorizedAccessException("Поточний пароль вказано невірно.");
         }
 
         admin.PasswordHash = passwordHasher.HashPassword(request.NewPassword);
@@ -113,13 +113,13 @@ public sealed class AdminAuthService(
     {
         if (id == currentAdminId)
         {
-            throw new InvalidOperationException("Нельзя удалить собственную учётную запись.");
+            throw new InvalidOperationException("Не можна видалити власний обліковий запис.");
         }
 
         var admin = await dbContext.Admins.FirstOrDefaultAsync(a => a.Id == id, ct);
         if (admin is null)
         {
-            throw new KeyNotFoundException($"Администратор с ID '{id}' не найден.");
+            throw new KeyNotFoundException($"Адміністратора з ID '{id}' не знайдено.");
         }
 
         if (admin.Role == "Admin")
@@ -127,7 +127,7 @@ public sealed class AdminAuthService(
             var adminCount = await dbContext.Admins.CountAsync(a => a.Role == "Admin", ct);
             if (adminCount <= 1)
             {
-                throw new InvalidOperationException("Нельзя удалить последнего администратора в системе.");
+                throw new InvalidOperationException("Не можна видалити останнього адміністратора в системі.");
             }
         }
 

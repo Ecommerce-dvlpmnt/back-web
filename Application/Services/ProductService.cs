@@ -26,10 +26,36 @@ public sealed class ProductService(
         };
     }
 
+    public async Task<PagedResult<PublicProductDto>> GetPublicAllAsync(
+        ProductQueryParameters query,
+        CancellationToken cancellationToken = default)
+    {
+        query.OnlyActive = true;
+        query.SupplierId = null;
+        var result = await productRepository.GetAllAsync(query, cancellationToken);
+        return new PagedResult<PublicProductDto>
+        {
+            Items = result.Items.Select(MapToPublicDto).ToList(),
+            TotalCount = result.TotalCount,
+            PageNumber = result.PageNumber,
+            PageSize = result.PageSize,
+            TotalPages = result.TotalPages
+        };
+    }
+
     public async Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var product = await productRepository.GetByIdAsync(id, cancellationToken);
         return product is null ? null : MapToDto(product);
+    }
+
+    public async Task<PublicProductDto?> GetPublicByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null || !product.IsActive)
+            return null;
+
+        return MapToPublicDto(product);
     }
 
     public async Task<ProductDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default)
@@ -38,8 +64,18 @@ public sealed class ProductService(
         return product is null ? null : MapToDto(product);
     }
 
+    public async Task<PublicProductDto?> GetPublicBySlugAsync(string slug, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetBySlugAsync(slug, cancellationToken);
+        if (product is null || !product.IsActive)
+            return null;
+
+        return MapToPublicDto(product);
+    }
+
     public async Task<ProductDto> CreateAsync(CreateProductDto request, CancellationToken cancellationToken = default)
     {
+        ValidateProductValues(request);
         await EnsureUniqueAsync(request.Sku, request.Slug, null, cancellationToken);
         var now = DateTime.UtcNow;
         var product = new Product
@@ -74,6 +110,7 @@ public sealed class ProductService(
         UpdateProductDto request,
         CancellationToken cancellationToken = default)
     {
+        ValidateProductValues(request);
         await EnsureUniqueAsync(request.Sku, request.Slug, id, cancellationToken);
         var product = await productRepository.GetByIdAsync(id, cancellationToken);
         if (product is null)
@@ -134,7 +171,7 @@ public sealed class ProductService(
         CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(productId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+            ?? throw new KeyNotFoundException($"Товар з ID '{productId}' не знайдено.");
 
         var imageUrl = await imageStorageService.UploadImageAsync(file, "products", cancellationToken);
         ProductImage? image = null;
@@ -162,13 +199,63 @@ public sealed class ProductService(
             mainImageUrl,
             image,
             cancellationToken)
-            ?? throw new KeyNotFoundException($"Product '{productId}' was not found.");
+            ?? throw new KeyNotFoundException($"Товар з ID '{productId}' не знайдено.");
 
         return MapToDto(updatedProduct);
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
-        productRepository.DeleteAsync(id, cancellationToken);
+    public async Task<ProductDto?> UpdateStatusAsync(
+        Guid id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return null;
+
+        if (product.IsActive != isActive)
+        {
+            await auditLogService.LogAsync(
+                isActive ? AuditLogActions.ProductActivated : AuditLogActions.ProductDeactivated,
+                AuditLogEntityTypes.Product,
+                product.Id.ToString(),
+                new
+                {
+                    sku = product.Sku,
+                    name = product.Name,
+                    before = new { isActive = product.IsActive },
+                    after = new { isActive }
+                },
+                cancellationToken);
+        }
+
+        product.IsActive = isActive;
+        var updated = await productRepository.UpdateAsync(product, cancellationToken);
+        return updated is null ? null : MapToDto(updated);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var product = await productRepository.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+            return false;
+
+        if (await productRepository.HasOrdersAsync(id, cancellationToken))
+            throw new InvalidOperationException("Неможливо видалити товар, за яким вже є оформлені замовлення. Деактивуйте його замість видалення.");
+
+        await auditLogService.LogAsync(
+            AuditLogActions.ProductDeleted,
+            AuditLogEntityTypes.Product,
+            product.Id.ToString(),
+            new
+            {
+                sku = product.Sku,
+                name = product.Name
+            },
+            cancellationToken);
+
+        return await productRepository.DeleteAsync(id, cancellationToken);
+    }
 
     public async Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -232,6 +319,39 @@ public sealed class ProductService(
         CancellationToken cancellationToken = default) =>
         productRepository.ExistsBySkuOrSlugAsync(sku, slug, excludeId, cancellationToken);
 
+    private static void ValidateProductValues(CreateProductDto request)
+    {
+        if (request.Price <= 0m)
+        {
+            throw new ArgumentException("Ціна продажу (Price) повинна бути більшою за 0.", nameof(request));
+        }
+
+        if (request.DropPrice < 0m)
+        {
+            throw new ArgumentException("Закупівельна ціна (DropPrice) не може бути від'ємною.", nameof(request));
+        }
+
+        if (request.DropPrice > request.Price)
+        {
+            throw new ArgumentException("Закупівельна ціна (DropPrice) не може перевищувати роздрібну ціну продажу (Price).", nameof(request));
+        }
+
+        if (request.OldPrice.HasValue && request.OldPrice.Value <= 0m)
+        {
+            throw new ArgumentException("Стара ціна (OldPrice) повинна бути більшою за 0.", nameof(request));
+        }
+
+        if (request.WeightKg.HasValue && request.WeightKg.Value < 0m)
+        {
+            throw new ArgumentException("Вага товару (WeightKg) не може бути від'ємною.", nameof(request));
+        }
+
+        if (request.Stock < 0)
+        {
+            throw new ArgumentException("Залишок на складі (Stock) не може бути від'ємним.", nameof(request));
+        }
+    }
+
     private async Task EnsureUniqueAsync(
         string sku,
         string slug,
@@ -239,7 +359,7 @@ public sealed class ProductService(
         CancellationToken cancellationToken)
     {
         if (await ExistsBySkuOrSlugAsync(sku, slug, excludeId, cancellationToken))
-            throw new InvalidOperationException("A product with this SKU or slug already exists.");
+            throw new InvalidOperationException("Товар з таким артикулом (SKU) або slug вже існує.");
     }
 
     private static string NormalizeAttributes(string? attributes)
@@ -254,7 +374,7 @@ public sealed class ProductService(
         }
         catch (JsonException exception)
         {
-            throw new ArgumentException("Attributes must contain valid JSON.", nameof(attributes), exception);
+            throw new ArgumentException("Атрибути повинні містити валідний JSON.", nameof(attributes), exception);
         }
     }
 
@@ -278,6 +398,38 @@ public sealed class ProductService(
         Slug = product.Slug,
         Description = product.Description,
         DropPrice = product.DropPrice,
+        Price = product.Price,
+        OldPrice = product.OldPrice,
+        Stock = product.Stock,
+        MainImageUrl = product.MainImageUrl,
+        Attributes = product.Attributes,
+        MetaTitle = product.MetaTitle,
+        MetaDescription = product.MetaDescription,
+        WeightKg = product.WeightKg,
+        IsActive = product.IsActive,
+        CreatedAt = product.CreatedAt,
+        UpdatedAt = product.UpdatedAt,
+        Images = product.Images
+            .OrderBy(image => image.SortOrder)
+            .Select(image => new ProductImageDto
+            {
+                Id = image.Id,
+                Url = image.Url,
+                Alt = image.Alt,
+                SortOrder = image.SortOrder
+            })
+            .ToList()
+    };
+
+    private static PublicProductDto MapToPublicDto(Product product) => new()
+    {
+        Id = product.Id,
+        CategoryId = product.CategoryId,
+        CategoryName = product.Category?.Name,
+        Sku = product.Sku,
+        Name = product.Name,
+        Slug = product.Slug,
+        Description = product.Description,
         Price = product.Price,
         OldPrice = product.OldPrice,
         Stock = product.Stock,

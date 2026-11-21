@@ -23,7 +23,7 @@ public sealed class SupplierService(ISupplierRepository supplierRepository) : IS
     public async Task<SupplierDto> CreateAsync(CreateSupplierDto request, CancellationToken cancellationToken = default)
     {
         if (await ExistsByNameAsync(request.Name, null, cancellationToken))
-            throw new InvalidOperationException("A supplier with this name already exists.");
+            throw new InvalidOperationException("Постачальник з такою назвою вже існує.");
 
         var supplier = new Supplier
         {
@@ -48,7 +48,7 @@ public sealed class SupplierService(ISupplierRepository supplierRepository) : IS
             return null;
 
         if (await ExistsByNameAsync(request.Name, id, cancellationToken))
-            throw new InvalidOperationException("A supplier with this name already exists.");
+            throw new InvalidOperationException("Постачальник з такою назвою вже існує.");
 
         supplier.Name = request.Name.Trim();
         supplier.Contact = request.Contact?.Trim();
@@ -81,7 +81,7 @@ public sealed class SupplierService(ISupplierRepository supplierRepository) : IS
             return false;
 
         if (await supplierRepository.HasProductsOrShipmentsAsync(id, cancellationToken))
-            throw new InvalidOperationException("Supplier has associated products or shipments and cannot be deleted. Deactivate it instead.");
+            throw new InvalidOperationException("Постачальник має пов'язані товари або відправлення і не може бути видалений. Деактивуйте його замість видалення.");
 
         return await supplierRepository.DeleteAsync(id, cancellationToken);
     }

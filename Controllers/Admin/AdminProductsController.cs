@@ -12,7 +12,7 @@ namespace EcommerceBackend.Controllers.Admin;
 [Produces("application/json")]
 public sealed class AdminProductsController(IProductService productService) : ControllerBase
 {
-    /// <summary>Получение всех товаров с пагинацией, фильтрацией по категории, статусу активности (IsActive) и поиском по названию/артикулу. В выдачу попадают даже скрытые и неактивные товары.</summary>
+    /// <summary>Отримання всіх товарів з пагінацією, фільтрацією за категорією, статусом активності (IsActive) та пошуком за назвою/артикулом.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -22,11 +22,10 @@ public sealed class AdminProductsController(IProductService productService) : Co
         [FromQuery] ProductQueryParameters query,
         CancellationToken cancellationToken)
     {
-        // В админке по умолчанию показываем все товары (активные и неактивные)
         return Ok(await productService.GetAllAsync(query, cancellationToken));
     }
 
-    /// <summary>Детальная информация о товаре для формы редактирования.</summary>
+    /// <summary>Детальна інформація про товар для форми редагування.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -92,7 +91,7 @@ public sealed class AdminProductsController(IProductService productService) : Co
         return Ok(product);
     }
 
-    /// <summary>Быстрое обновление остатка товара на складе.</summary>
+    /// <summary>Швидке оновлення залишку товару на складі.</summary>
     [HttpPatch("{id:guid}/stock")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -108,15 +107,32 @@ public sealed class AdminProductsController(IProductService productService) : Co
         return updated ? NoContent() : NotFound();
     }
 
-    /// <summary>Мягкое удаление товара (деактивация IsActive = false).</summary>
+    /// <summary>Швидке перемикання статусу активності товару (активний / неактивний).</summary>
+    [HttpPatch("{id:guid}/status")]
+    [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateProductStatusDto request,
+        CancellationToken cancellationToken)
+    {
+        var product = await productService.UpdateStatusAsync(id, request.IsActive, cancellationToken);
+        return product is null ? NotFound() : Ok(product);
+    }
+
+    /// <summary>Видалення товару (якщо до нього не прив'язані замовлення).</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> SoftDelete(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await productService.SoftDeleteAsync(id, cancellationToken);
+        var deleted = await productService.DeleteAsync(id, cancellationToken);
         return deleted ? NoContent() : NotFound();
     }
 }

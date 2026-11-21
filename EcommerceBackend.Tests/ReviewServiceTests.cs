@@ -82,8 +82,8 @@ public sealed class ReviewServiceTests
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.CreateReviewAsync(botRequest));
 
-        Assert.Contains("Spam submission detected", exception.Message);
-        Assert.Null(reviewRepo.Created); // Запись не должна попасть в базу
+        Assert.Contains("Виявлено спам-активність", exception.Message);
+        Assert.Null(reviewRepo.Created);
     }
 
     [Fact]
@@ -366,6 +366,9 @@ public sealed class ReviewServiceTests
 
         public Task<bool> SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
+
+        public Task<bool> HasOrdersAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
 
         public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);

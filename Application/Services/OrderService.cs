@@ -1,4 +1,5 @@
 using EcommerceBackend.Application.DTOs.Orders;
+using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Exceptions;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Data;
@@ -10,6 +11,8 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class OrderService(
     AppDbContext dbContext,
+    IReferralService referralService,
+    ITelegramBotClient telegramBotClient,
     IAuditLogService auditLogService,
     ILogger<OrderService>? logger = null) : IOrderService
 {
@@ -62,6 +65,14 @@ public sealed class OrderService(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
             .ToDictionaryAsync(product => product.Id, cancellationToken);
 
+        var inactiveProducts = products.Values.Where(product => !product.IsActive).ToList();
+        if (inactiveProducts.Count > 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var names = string.Join(", ", inactiveProducts.Select(product => $"'{product.Name}'"));
+            throw new InvalidOperationException($"Товар {names} знято з продажу та недоступний для замовлення.");
+        }
+
         var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
         if (shortages.Count > 0)
         {
@@ -111,9 +122,72 @@ public sealed class OrderService(
             order.TotalProfit += (product.Price - product.DropPrice) * quantity;
         }
 
+        await referralService.AttachReferrerAsync(order, request.ReferralCode, cancellationToken);
+
         dbContext.Orders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        Partner? attachedPartner = null;
+        if (order.ReferrerId.HasValue)
+        {
+            attachedPartner = await dbContext.Partners
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == order.ReferrerId.Value, cancellationToken);
+
+            if (attachedPartner is not null && order.ReferralRewardAmount > 0m)
+            {
+                _ = telegramBotClient.SendReferralRewardPendingNotificationAsync(
+                    new ReferralRewardResult(
+                        order.Id,
+                        order.OrderNumber,
+                        attachedPartner.Id,
+                        attachedPartner.TelegramUserId,
+                        attachedPartner.Name,
+                        order.TotalPrice,
+                        attachedPartner.CommissionPercent,
+                        order.ReferralRewardAmount,
+                        attachedPartner.TotalEarned,
+                        ReferralRewardStatus.Pending),
+                    CancellationToken.None);
+            }
+        }
+
+        PromoCode? attachedPromo = null;
+        if (order.PromoCodeId.HasValue)
+        {
+            attachedPromo = await dbContext.PromoCodes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == order.PromoCodeId.Value, cancellationToken);
+        }
+
+        _ = telegramBotClient.SendAdminNewOrderNotificationAsync(
+            new AdminBotOrderNotificationDto(
+                order.Id,
+                order.OrderNumber,
+                order.PublicId,
+                $"{order.CustomerFirstName} {order.CustomerLastName}".Trim(),
+                order.CustomerPhone,
+                order.DeliveryCityName,
+                order.DeliveryWarehouseName,
+                order.PaymentMethod,
+                order.OrderStatus,
+                order.TotalPrice,
+                order.DiscountAmount,
+                attachedPromo?.Code,
+                attachedPromo?.DiscountPercent,
+                attachedPartner?.Name,
+                attachedPartner?.ReferralCode,
+                order.ReferralRewardAmount,
+                order.CreatedAt,
+                order.Items
+                    .Select(i => new AdminBotOrderItemDto(
+                        i.ProductNameSnapshot,
+                        i.Quantity,
+                        i.UnitPrice,
+                        i.UnitPrice * i.Quantity))
+                    .ToArray()),
+            CancellationToken.None);
 
         logger?.LogInformation(
             "Замовлення #{OrderNumber} успішно створено (PublicId: {PublicId}). Позицій: {ItemCount}, загальна сума: {TotalPrice} грн.",
@@ -144,6 +218,7 @@ public sealed class OrderService(
         var order = await dbContext.Orders
             .AsNoTracking()
             .Include(o => o.Items)
+            .Include(o => o.Referrer)
             .Include(o => o.StatusHistory)
                 .ThenInclude(h => h.ChangedByAdmin)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
@@ -220,7 +295,13 @@ public sealed class OrderService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        var cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        if (cancelledReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, "скасовано клієнтом", CancellationToken.None);
+        }
 
         logger?.LogInformation(
             "Замовлення #{OrderNumber} (PublicId: {PublicId}) скасовано клієнтом. Товари повернено на склад.",
@@ -333,6 +414,10 @@ public sealed class OrderService(
         else if (OrderStockTransitionPolicy.RequiresStockDeduction(oldStatus, newStatus))
         {
             await DeductStockAsync(order, now, cancellationToken);
+            if (order.ReferrerId.HasValue && order.ReferralRewardStatus == ReferralRewardStatus.Cancelled)
+            {
+                order.ReferralRewardStatus = ReferralRewardStatus.Pending;
+            }
         }
 
         order.OrderStatus = newStatus;
@@ -365,7 +450,36 @@ public sealed class OrderService(
             cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        ReferralRewardResult? deliveredReward = null;
+        ReferralRewardResult? cancelledReward = null;
+
+        if (newStatus == OrderStatus.Delivered)
+        {
+            deliveredReward = await referralService.ProcessDeliveredOrderRewardAsync(order.Id, cancellationToken);
+        }
+        else if (newStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
+        {
+            cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
+
+        if (deliveredReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardDeliveredNotificationAsync(deliveredReward, CancellationToken.None);
+        }
+        else if (cancelledReward is not null)
+        {
+            var reason = newStatus switch
+            {
+                OrderStatus.Refused => "відмова на пошті",
+                OrderStatus.Returned => "повернення товару",
+                _ => "скасовано"
+            };
+            _ = telegramBotClient.SendReferralRewardCancelledNotificationAsync(cancelledReward, reason, CancellationToken.None);
+        }
+
         return MapToResponse(order);
     }
 
@@ -376,6 +490,7 @@ public sealed class OrderService(
     {
         var order = await dbContext.Orders
             .Include(o => o.Items)
+            .Include(o => o.Referrer)
             .Include(o => o.StatusHistory)
                 .ThenInclude(h => h.ChangedByAdmin)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
@@ -389,12 +504,191 @@ public sealed class OrderService(
         return MapToAdminDetailResponse(order);
     }
 
+    public async Task<OrderPaymentConfirmationResponse> ConfirmPaymentAsync(
+        Guid id,
+        ConfirmOrderPaymentRequest? request = null,
+        Guid? adminId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ReferralRewardResult? referralReward;
+        Order order;
+
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        {
+            order = await dbContext.Orders
+                .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {id} FOR UPDATE")
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException($"Замовлення з ID '{id}' не знайдено.");
+
+            if (order.OrderStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
+            {
+                throw new InvalidOperationException("Не можна підтвердити оплату для скасованого або поверненого замовлення.");
+            }
+
+            var now = DateTime.UtcNow;
+            if (order.PaymentStatus != PaymentStatus.Paid)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.UpdatedAt = now;
+            }
+
+            ApplyPaymentMetadata(order, request?.PaymentProvider, request?.ExternalPaymentId, request?.Comment, now);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            referralReward = await referralService.ProcessPaidOrderAsync(order.Id, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        logger?.LogInformation(
+            "Оплату замовлення #{OrderNumber} (PublicId: {PublicId}) підтверджено.",
+            order.OrderNumber,
+            order.PublicId);
+
+        return new OrderPaymentConfirmationResponse(
+            MapToResponse(order),
+            referralReward,
+            false);
+    }
+
+    public async Task<OrderPaymentConfirmationResponse> ProcessPaymentWebhookAsync(
+        PaymentWebhookRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var targetOrderId = await ResolveWebhookOrderIdAsync(request, cancellationToken);
+
+        if (request.PaymentStatus == PaymentStatus.Paid)
+        {
+            var confirmRequest = new ConfirmOrderPaymentRequest
+            {
+                PaymentProvider = request.PaymentProvider,
+                ExternalPaymentId = request.ExternalPaymentId
+            };
+
+            return await ConfirmPaymentAsync(targetOrderId, confirmRequest, null, cancellationToken);
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var order = await dbContext.Orders
+            .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {targetOrderId} FOR UPDATE")
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new KeyNotFoundException($"Замовлення з ID '{targetOrderId}' не знайдено.");
+
+        if (order.PaymentStatus == PaymentStatus.Paid && request.PaymentStatus == PaymentStatus.Failed)
+        {
+            throw new InvalidOperationException("Не можна змінити статус вже оплаченого замовлення на Failed.");
+        }
+
+        var now = DateTime.UtcNow;
+        order.PaymentStatus = request.PaymentStatus;
+        order.UpdatedAt = now;
+
+        ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, null, now);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        ReferralRewardResult? cancelledReward = null;
+        if (request.PaymentStatus == PaymentStatus.Refunded)
+        {
+            cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var telegramNotificationSent = false;
+        if (cancelledReward is not null)
+        {
+            telegramNotificationSent = await telegramBotClient.SendReferralRewardCancelledNotificationAsync(
+                cancelledReward,
+                "повернення коштів",
+                cancellationToken);
+        }
+
+        return new OrderPaymentConfirmationResponse(
+            MapToResponse(order),
+            cancelledReward,
+            telegramNotificationSent);
+    }
+
+    private async Task<Guid> ResolveWebhookOrderIdAsync(
+        PaymentWebhookRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.OrderId.HasValue)
+        {
+            return request.OrderId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OrderPublicId))
+        {
+            var publicId = request.OrderPublicId.Trim();
+            var byPublicId = await dbContext.Orders
+                .AsNoTracking()
+                .Where(o => o.PublicId == publicId)
+                .Select(o => (Guid?)o.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return byPublicId
+                ?? throw new KeyNotFoundException($"Замовлення з публічним кодом '{publicId}' не знайдено.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ExternalPaymentId))
+        {
+            var externalId = request.ExternalPaymentId.Trim();
+            var byExternalId = await dbContext.Orders
+                .AsNoTracking()
+                .Where(o => o.ExternalPaymentId == externalId)
+                .Select(o => (Guid?)o.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return byExternalId
+                ?? throw new KeyNotFoundException($"Замовлення із зовнішнім ID платежу '{externalId}' не знайдено.");
+        }
+
+        throw new ArgumentException("Потрібно вказати OrderId, OrderPublicId або ExternalPaymentId.", nameof(request));
+    }
+
+    private static void ApplyPaymentMetadata(
+        Order order,
+        string? paymentProvider,
+        string? externalPaymentId,
+        string? comment,
+        DateTime now)
+    {
+        if (!string.IsNullOrWhiteSpace(paymentProvider))
+        {
+            order.PaymentProvider = paymentProvider.Trim();
+            order.UpdatedAt = now;
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalPaymentId))
+        {
+            order.ExternalPaymentId = externalPaymentId.Trim();
+            order.UpdatedAt = now;
+        }
+
+        if (!string.IsNullOrWhiteSpace(comment))
+        {
+            var trimmedComment = comment.Trim();
+            order.AdminComment = string.IsNullOrWhiteSpace(order.AdminComment)
+                ? trimmedComment
+                : $"{order.AdminComment}\n{trimmedComment}";
+            order.UpdatedAt = now;
+        }
+    }
+
     private async Task ReturnStockAsync(
         Order order,
         DateTime now,
         CancellationToken cancellationToken)
     {
-        var productIds = order.Items.Select(i => i.ProductId).ToArray();
+        var productIds = order.Items.Select(i => i.ProductId).Distinct().Order().ToArray();
         var products = await dbContext.Products
             .FromSqlInterpolated(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
@@ -426,6 +720,13 @@ public sealed class OrderService(
             .FromSqlInterpolated(
                 $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
             .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        var inactiveProducts = products.Values.Where(product => !product.IsActive).ToList();
+        if (inactiveProducts.Count > 0)
+        {
+            var names = string.Join(", ", inactiveProducts.Select(product => $"'{product.Name}'"));
+            throw new InvalidOperationException($"Товар {names} знято з продажу та недоступний для замовлення.");
+        }
 
         var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
         if (shortages.Count > 0)
@@ -542,7 +843,8 @@ public sealed class OrderService(
                     item.Quantity,
                     item.UnitPrice,
                     item.UnitPrice * item.Quantity))
-                .ToArray());
+                .ToArray(),
+            ReferrerId: order.ReferrerId);
     }
 
     private static AdminOrderDetailResponse MapToAdminDetailResponse(Order order)
@@ -593,6 +895,11 @@ public sealed class OrderService(
                     h.ChangedByAdmin != null ? (h.ChangedByAdmin.Username ?? h.ChangedByAdmin.Name) : null,
                     h.Comment,
                     h.CreatedAt))
-                .ToArray());
+                .ToArray(),
+            ReferrerId: order.ReferrerId,
+            ReferrerName: order.Referrer?.Name,
+            ReferralCode: order.Referrer?.ReferralCode,
+            ReferralRewardAmount: order.ReferralRewardAmount,
+            ReferralRewardStatus: order.ReferralRewardStatus);
     }
 }

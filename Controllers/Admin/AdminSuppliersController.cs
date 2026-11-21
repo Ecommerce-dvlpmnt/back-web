@@ -53,7 +53,7 @@ public sealed class AdminSuppliersController(ISupplierService supplierService) :
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
     }
 
-    /// <summary>Обновление данных поставщика.</summary>
+    /// <summary>Оновлення даних постачальника.</summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(SupplierDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -70,7 +70,7 @@ public sealed class AdminSuppliersController(ISupplierService supplierService) :
         return supplier is null ? NotFound() : Ok(supplier);
     }
 
-    /// <summary>Быстрое переключение статуса активности поставщика (активен / неактивен).</summary>
+    /// <summary>Швидке перемикання статусу активності постачальника (активний / неактивний).</summary>
     [HttpPatch("{id:guid}/status")]
     [ProducesResponseType(typeof(SupplierDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -86,7 +86,7 @@ public sealed class AdminSuppliersController(ISupplierService supplierService) :
         return supplier is null ? NotFound() : Ok(supplier);
     }
 
-    /// <summary>Удаление поставщика (если к нему не привязаны товары или отправки).</summary>
+    /// <summary>Видалення постачальника (якщо до нього не прив'язані товари або відправлення).</summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

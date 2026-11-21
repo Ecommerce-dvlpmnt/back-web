@@ -38,4 +38,14 @@ public interface IOrderService
         Guid id,
         string? comment,
         CancellationToken cancellationToken = default);
+
+    Task<OrderPaymentConfirmationResponse> ConfirmPaymentAsync(
+        Guid id,
+        ConfirmOrderPaymentRequest? request = null,
+        Guid? adminId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<OrderPaymentConfirmationResponse> ProcessPaymentWebhookAsync(
+        PaymentWebhookRequest request,
+        CancellationToken cancellationToken = default);
 }
