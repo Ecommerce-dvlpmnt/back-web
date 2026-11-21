@@ -171,6 +171,72 @@ namespace EcommerceBackend.Migrations
                     b.ToTable("Admins", (string)null);
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.AdminAuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("Id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("Action");
+
+                    b.Property<string>("AdminUsername")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("AdminUsername");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("CreatedAt")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("Details")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("EntityId");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("EntityType");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .IsDescending()
+                        .HasDatabaseName("IX_AdminAuditLogs_CreatedAt");
+
+                    b.HasIndex("Action", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_AdminAuditLogs_Action_CreatedAt");
+
+                    b.HasIndex("AdminUsername", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_AdminAuditLogs_AdminUsername_CreatedAt");
+
+                    b.HasIndex("EntityType", "EntityId", "CreatedAt")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("IX_AdminAuditLogs_Entity_CreatedAt");
+
+                    b.ToTable("AdminAuditLogs", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.Campaign", b =>
                 {
                     b.Property<Guid>("Id")

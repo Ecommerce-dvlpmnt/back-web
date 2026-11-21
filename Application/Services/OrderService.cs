@@ -10,6 +10,7 @@ namespace EcommerceBackend.Application.Services;
 
 public sealed class OrderService(
     AppDbContext dbContext,
+    IAuditLogService auditLogService,
     ILogger<OrderService>? logger = null) : IOrderService
 {
     public async Task<OrderResponse> CreateAsync(
@@ -18,6 +19,37 @@ public sealed class OrderService(
     {
         if (request.Items is null || request.Items.Count == 0)
             throw new ArgumentException("An order must contain at least one item.", nameof(request));
+
+        var (firstName, lastName) = NormalizeCustomerName(
+            request.CustomerFirstName,
+            request.CustomerLastName);
+
+        if (!PhoneNumberNormalizer.TryNormalize(request.CustomerPhone, out var phone))
+        {
+            throw new ArgumentException(
+                "Некоректний номер телефону. Вкажіть український номер у форматі +380XXXXXXXXX.",
+                nameof(request));
+        }
+
+        var email = request.CustomerEmail?.Trim();
+        var cityName = RequireDeliveryField(
+            request.DeliveryCityName,
+            "Вкажіть місто доставки.",
+            150,
+            "Назва міста не може перевищувати 150 символів.");
+        var warehouseName = RequireDeliveryField(
+            request.DeliveryWarehouseName,
+            "Вкажіть відділення або поштомат Нової Пошти.",
+            250,
+            "Назва відділення не може перевищувати 250 символів.");
+
+        if (!string.IsNullOrWhiteSpace(request.DeliveryType)
+            && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
+        {
+            warehouseName = $"{request.DeliveryType}: {warehouseName}";
+        }
+
+        var comment = request.CustomerComment?.Trim();
 
         var requestedQuantities = AggregateQuantities(request.Items);
         var productIds = requestedQuantities.Keys.Order().ToArray();
@@ -37,34 +69,6 @@ public sealed class OrderService(
             throw new InsufficientStockException(shortages);
         }
 
-        var firstName = request.CustomerFirstName?.Trim() ?? "";
-        var lastName = request.CustomerLastName?.Trim() ?? "";
-
-        if (string.IsNullOrWhiteSpace(lastName) && !string.IsNullOrWhiteSpace(firstName))
-        {
-            var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            firstName = parts[0];
-            lastName = parts.Length > 1 ? parts[1] : parts[0];
-        }
-
-        if (string.IsNullOrWhiteSpace(firstName)) firstName = "Покупець";
-        if (string.IsNullOrWhiteSpace(lastName)) lastName = firstName;
-
-        var phone = request.CustomerPhone?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(phone))
-            throw new ArgumentException("Номер телефону є обов'язковим для оформлення замовлення.", nameof(request));
-
-        var email = request.CustomerEmail?.Trim();
-        var cityName = request.DeliveryCityName?.Trim();
-        var warehouseName = request.DeliveryWarehouseName?.Trim();
-
-        if (!string.IsNullOrWhiteSpace(request.DeliveryType) && !string.IsNullOrWhiteSpace(warehouseName)
-            && !warehouseName.Contains(request.DeliveryType, StringComparison.OrdinalIgnoreCase))
-        {
-            warehouseName = $"{request.DeliveryType}: {warehouseName}";
-        }
-
-        var comment = request.CustomerComment?.Trim();
         var now = DateTime.UtcNow;
 
         var order = new Order
@@ -294,33 +298,45 @@ public sealed class OrderService(
         Guid? adminId = null,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         var order = await dbContext.Orders
-            .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Orders\" WHERE \"Id\" = {id} FOR UPDATE")
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (order is null)
         {
             throw new KeyNotFoundException($"Замовлення з ID '{id}' не знайдено.");
         }
 
+        await dbContext.Entry(order)
+            .Collection(o => o.Items)
+            .LoadAsync(cancellationToken);
+
         var oldStatus = order.OrderStatus;
         var newStatus = request.Status;
 
         if (oldStatus == newStatus)
         {
+            await transaction.CommitAsync(cancellationToken);
             return MapToResponse(order);
         }
 
-        if (newStatus == OrderStatus.Cancelled
-            && oldStatus != OrderStatus.Cancelled
-            && oldStatus != OrderStatus.Refused
-            && oldStatus != OrderStatus.Returned)
+        var now = DateTime.UtcNow;
+
+        if (OrderStockTransitionPolicy.RequiresStockReturn(oldStatus, newStatus))
         {
-            await ReturnStockAsync(order, DateTime.UtcNow, cancellationToken);
+            await ReturnStockAsync(order, now, cancellationToken);
+        }
+        else if (OrderStockTransitionPolicy.RequiresStockDeduction(oldStatus, newStatus))
+        {
+            await DeductStockAsync(order, now, cancellationToken);
         }
 
         order.OrderStatus = newStatus;
-        order.UpdatedAt = DateTime.UtcNow;
+        order.UpdatedAt = now;
 
         dbContext.OrderStatusHistory.Add(new OrderStatusHistory
         {
@@ -330,10 +346,26 @@ public sealed class OrderService(
             NewStatus = newStatus,
             ChangedByAdminId = adminId,
             Comment = request.Comment,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now
         });
 
+        await auditLogService.LogAsync(
+            AuditLogActions.OrderStatusChanged,
+            AuditLogEntityTypes.Order,
+            order.Id.ToString(),
+            new
+            {
+                orderNumber = order.OrderNumber,
+                publicId = order.PublicId,
+                before = new { status = oldStatus.ToString() },
+                after = new { status = newStatus.ToString() },
+                changedFields = new[] { "status" },
+                comment = request.Comment
+            },
+            cancellationToken);
+
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return MapToResponse(order);
     }
 
@@ -376,6 +408,88 @@ public sealed class OrderService(
                 product.StockUpdatedAt = now;
             }
         }
+    }
+
+    private async Task DeductStockAsync(
+        Order order,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var requestedQuantities = order.Items
+            .GroupBy(item => item.ProductId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(item => item.Quantity));
+
+        var productIds = requestedQuantities.Keys.Order().ToArray();
+        var products = await dbContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        var shortages = OrderStockValidator.GetShortages(requestedQuantities, products);
+        if (shortages.Count > 0)
+        {
+            throw new InsufficientStockException(shortages);
+        }
+
+        foreach (var item in order.Items)
+        {
+            var product = products[item.ProductId];
+            product.Stock -= item.Quantity;
+            product.StockUpdatedAt = now;
+        }
+    }
+
+    private static (string FirstName, string LastName) NormalizeCustomerName(
+        string? firstNameValue,
+        string? lastNameValue)
+    {
+        var firstName = firstNameValue?.Trim();
+        if (string.IsNullOrWhiteSpace(firstName) || firstName.Length < 2)
+            throw new ArgumentException("Вкажіть ім'я покупця (мінімум 2 символи).", nameof(firstNameValue));
+
+        if (firstName.Length > 100)
+            throw new ArgumentException("Ім'я покупця не може перевищувати 100 символів.", nameof(firstNameValue));
+
+        var lastName = lastNameValue?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(lastName))
+        {
+            var parts = firstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 1)
+            {
+                firstName = parts[0];
+                lastName = parts[1].Trim();
+            }
+            else
+            {
+                lastName = firstName;
+            }
+        }
+
+        if (firstName.Length < 2)
+            throw new ArgumentException("Вкажіть ім'я покупця (мінімум 2 символи).", nameof(firstNameValue));
+
+        if (lastName.Length > 100)
+            throw new ArgumentException("Прізвище покупця не може перевищувати 100 символів.", nameof(lastNameValue));
+
+        return (firstName, lastName);
+    }
+
+    private static string RequireDeliveryField(
+        string? value,
+        string requiredMessage,
+        int maxLength,
+        string maxLengthMessage)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new ArgumentException(requiredMessage, nameof(value));
+
+        if (normalized.Length > maxLength)
+            throw new ArgumentException(maxLengthMessage, nameof(value));
+
+        return normalized;
     }
 
     private static Dictionary<Guid, int> AggregateQuantities(

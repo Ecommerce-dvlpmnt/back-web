@@ -2,6 +2,7 @@ using EcommerceBackend.Application.DTOs.Reviews;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EcommerceBackend.Controllers;
 
@@ -16,9 +17,11 @@ public sealed class ReviewsController(IReviewService reviewService) : Controller
     /// Защищен от спам-ботов скрытым полем Honeypot.
     /// </summary>
     [HttpPost]
+    [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(ReviewDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ReviewDto>> Create(
         [FromBody] CreateReviewDto request,
         CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.DTOs.Admin;
 using EcommerceBackend.Application.DTOs.Reviews;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Application.Services;
@@ -25,7 +26,7 @@ public sealed class ReviewServiceTests
 
         var productRepo = new FakeProductRepository(product);
         var reviewRepo = new FakeReviewRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var service = new ReviewService(reviewRepo, productRepo, new FakeAuditLogService());
 
         var request = new CreateReviewDto
         {
@@ -67,7 +68,7 @@ public sealed class ReviewServiceTests
 
         var productRepo = new FakeProductRepository(product);
         var reviewRepo = new FakeReviewRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var service = new ReviewService(reviewRepo, productRepo, new FakeAuditLogService());
 
         var botRequest = new CreateReviewDto
         {
@@ -90,7 +91,7 @@ public sealed class ReviewServiceTests
     {
         var productRepo = new FakeProductRepository(); // Нет товаров
         var reviewRepo = new FakeReviewRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var service = new ReviewService(reviewRepo, productRepo, new FakeAuditLogService());
 
         var request = new CreateReviewDto
         {
@@ -154,7 +155,7 @@ public sealed class ReviewServiceTests
         });
 
         var productRepo = new FakeProductRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var service = new ReviewService(reviewRepo, productRepo, new FakeAuditLogService());
 
         var summary = await service.GetProductReviewsAsync(productId);
 
@@ -184,7 +185,8 @@ public sealed class ReviewServiceTests
         var reviewRepo = new FakeReviewRepository();
         reviewRepo.Reviews.Add(review);
         var productRepo = new FakeProductRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var auditLogService = new FakeAuditLogService();
+        var service = new ReviewService(reviewRepo, productRepo, auditLogService);
 
         var result = await service.UpdateStatusAsync(review.Id, new UpdateReviewStatusDto
         {
@@ -195,6 +197,9 @@ public sealed class ReviewServiceTests
         Assert.NotNull(result);
         Assert.Equal(ReviewStatus.Approved, result!.Status);
         Assert.Equal("Проверено по номеру ТТН", result.AdminComment);
+        Assert.Single(auditLogService.Logs);
+        Assert.Equal(AuditLogActions.ReviewStatusChanged, auditLogService.Logs[0].Action);
+        Assert.Equal(AuditLogEntityTypes.Review, auditLogService.Logs[0].EntityType);
     }
 
     [Fact]
@@ -213,12 +218,43 @@ public sealed class ReviewServiceTests
         var reviewRepo = new FakeReviewRepository();
         reviewRepo.Reviews.Add(review);
         var productRepo = new FakeProductRepository();
-        var service = new ReviewService(reviewRepo, productRepo);
+        var service = new ReviewService(reviewRepo, productRepo, new FakeAuditLogService());
 
         var deleted = await service.DeleteAsync(review.Id);
 
         Assert.True(deleted);
         Assert.Empty(reviewRepo.Reviews);
+    }
+
+    private sealed class FakeAuditLogService : IAuditLogService
+    {
+        public List<AdminAuditLog> Logs { get; } = new();
+
+        public Task LogAsync(
+            string action,
+            string entityType,
+            string entityId,
+            object details,
+            CancellationToken cancellationToken = default)
+        {
+            Logs.Add(new AdminAuditLog
+            {
+                Id = Guid.NewGuid(),
+                AdminUsername = "test",
+                Action = action,
+                EntityType = entityType,
+                EntityId = entityId,
+                Details = System.Text.Json.JsonSerializer.Serialize(details),
+                CreatedAt = DateTime.UtcNow
+            });
+
+            return Task.CompletedTask;
+        }
+
+        public Task<EcommerceBackend.Application.DTOs.Products.PagedResult<AdminAuditLogDto>> GetPagedAsync(
+            AuditLogQuery query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new EcommerceBackend.Application.DTOs.Products.PagedResult<AdminAuditLogDto>());
     }
 
     private sealed class FakeReviewRepository : IReviewRepository
