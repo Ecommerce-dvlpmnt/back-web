@@ -19,7 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="EcommerceBackend.Tests/**/*.cs" />
+    <Compile Remove="EcommerceBackend.Tests\**" />
+    <Content Remove="EcommerceBackend.Tests\**" />
+    <EmbeddedResource Remove="EcommerceBackend.Tests\**" />
+    <None Remove="EcommerceBackend.Tests\**" />
   </ItemGroup>
 
   <ItemGroup>

@@ -418,7 +418,8 @@ public sealed class ProductService(
                 Alt = image.Alt,
                 SortOrder = image.SortOrder
             })
-            .ToList()
+            .ToList(),
+        Variants = MapVariants(product)
     };
 
     private static PublicProductDto MapToPublicDto(Product product) => new()
@@ -450,6 +451,81 @@ public sealed class ProductService(
                 Alt = image.Alt,
                 SortOrder = image.SortOrder
             })
-            .ToList()
+            .ToList(),
+        Variants = MapVariants(product)
     };
+
+    private static List<ProductVariantDto> MapVariants(Product product)
+    {
+        if (product.RelatedLinks is null || product.RelatedLinks.Count == 0)
+            return [];
+
+        var all = new List<Product> { product };
+        all.AddRange(product.RelatedLinks
+            .Select(r => r.RelatedProduct)
+            .Where(p => p is not null && p.IsActive));
+
+        var distinct = all.DistinctBy(p => p.Id).ToList();
+        if (distinct.Count <= 1)
+            return [];
+
+        return distinct
+            .Select(p =>
+            {
+                var h = ExtractHeight(p.Name, p.Attributes);
+                return new ProductVariantDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Slug = p.Slug,
+                    Price = p.Price,
+                    OldPrice = p.OldPrice,
+                    Height = string.IsNullOrWhiteSpace(h) ? p.Name : h,
+                    InStock = p.Stock > 0,
+                    IsCurrent = p.Id == product.Id
+                };
+            })
+            .OrderBy(v => ParseHeightValue(v.Height))
+            .ToList();
+    }
+
+    private static string ExtractHeight(string name, string? attributesJson)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(name, @"(\d+([.,]\d+)?)\s*(м|см)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+            return match.Value;
+
+        if (!string.IsNullOrWhiteSpace(attributesJson))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(attributesJson);
+                if (doc.RootElement.TryGetProperty("Висота", out var hProp))
+                {
+                    var hStr = hProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(hStr))
+                    {
+                        var hMatch = System.Text.RegularExpressions.Regex.Match(hStr, @"(\d+([.,]\d+)?)\s*(м|см)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        if (hMatch.Success) return hMatch.Value;
+                        return hStr;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        return string.Empty;
+    }
+
+    private static decimal ParseHeightValue(string height)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(height, @"(\d+([.,]\d+)?)");
+        if (m.Success && decimal.TryParse(m.Value.Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var val))
+        {
+            if (height.Contains("см", StringComparison.OrdinalIgnoreCase))
+                return val / 100m;
+            return val;
+        }
+        return 0m;
+    }
 }
