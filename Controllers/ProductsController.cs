@@ -25,6 +25,7 @@ public sealed class ProductsController(IProductService productService) : Control
             SortBy = query.SortBy,
             PageNumber = query.PageNumber,
             PageSize = query.PageSize,
+            Summary = query.Summary,
             OnlyActive = true
         };
         return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));

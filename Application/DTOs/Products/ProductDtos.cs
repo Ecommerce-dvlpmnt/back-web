@@ -139,6 +139,7 @@ public sealed class UpdateProductStatusDto
 
 public sealed class PublicProductQueryParameters
 {
+    public bool Summary { get; set; }
     public Guid? CategoryId { get; set; }
     public string? Search { get; set; }
     public string? SortBy { get; set; } = "date_desc";
@@ -155,6 +156,8 @@ public sealed class ProductQueryParameters
     public string? SortBy { get; set; } = "date_desc";
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 12;
+    // Opt-in lightweight storefront list. Full product/feed/admin responses stay compatible.
+    public bool Summary { get; set; }
 }
 
 public sealed class PagedResult<T>
