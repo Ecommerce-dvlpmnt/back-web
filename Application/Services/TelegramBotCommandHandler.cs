@@ -1191,7 +1191,7 @@ public sealed class TelegramBotCommandHandler(
     {
         var configuredSiteUrl = configuration["Referral:PublicSiteUrl"];
         var siteUrl = string.IsNullOrWhiteSpace(configuredSiteUrl)
-            ? "https://front-web-pi.vercel.app"
+            ? "https://www.jingledecor.com.ua"
             : configuredSiteUrl.Trim();
 
         return $"{siteUrl.TrimEnd('/')}/?ref={Uri.EscapeDataString(referralCode)}";

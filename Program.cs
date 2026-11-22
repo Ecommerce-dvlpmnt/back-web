@@ -46,13 +46,22 @@ var builder = WebApplication.CreateBuilder(args);
 var rawEnvOrigins = builder.Configuration["CORS_ALLOWED_ORIGINS"]
     ?? builder.Configuration["Cors:AllowedOriginsString"];
 
+var defaultOrigins = new[]
+{
+    "https://www.jingledecor.com.ua",
+    "https://jingledecor.com.ua",
+    "https://front-web-pi.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173"
+};
+
 var allowedOrigins = (rawEnvOrigins != null
     ? rawEnvOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     : builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .Concat(defaultOrigins)
     .Where(origin => !string.IsNullOrWhiteSpace(origin))
     .Distinct()
     .ToArray();
-var defaultOrigins = new[] { "http://localhost:3000", "http://localhost:5173" };
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .MinimumLevel.Is(context.HostingEnvironment.IsDevelopment()

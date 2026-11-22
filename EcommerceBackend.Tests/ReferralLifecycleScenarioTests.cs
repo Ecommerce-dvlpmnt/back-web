@@ -41,7 +41,7 @@ public sealed class ReferralLifecycleScenarioTests
         // Перевіряємо привітання від бота та наявність реф-посилання
         var welcomeMsg = telegramClient.LastMessageText;
         Assert.Contains("AUTO_777123", welcomeMsg);
-        Assert.Contains("https://front-web-pi.vercel.app/?ref=AUTO_777123", welcomeMsg);
+        Assert.Contains("https://www.jingledecor.com.ua/?ref=AUTO_777123", welcomeMsg);
 
         // 3. Покупець на сайті оформив замовлення №101 на 2 000 грн за реф-посиланням
         var order1 = system.PlaceOrder(orderNumber: 101, totalPrice: 2000m, referralCode: "AUTO_777123");
@@ -210,7 +210,7 @@ public sealed class ReferralLifecycleScenarioTests
             var config = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Referral:PublicSiteUrl"] = "https://front-web-pi.vercel.app"
+                    ["Referral:PublicSiteUrl"] = "https://www.jingledecor.com.ua"
                 })
                 .Build();
 

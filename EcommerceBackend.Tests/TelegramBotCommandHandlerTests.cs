@@ -28,7 +28,7 @@ public sealed class TelegramBotCommandHandlerTests
         Assert.Equal(1001, referralService.LastRegisterRequest?.TelegramUserId);
         Assert.Single(telegramClient.Messages);
         Assert.Contains("Вітаю", telegramClient.Messages[0].Text);
-        Assert.Contains("https://front-web-pi.vercel.app/?ref=SASHA5", telegramClient.Messages[0].Text);
+        Assert.Contains("https://www.jingledecor.com.ua/?ref=SASHA5", telegramClient.Messages[0].Text);
         Assert.DoesNotContain("/help", telegramClient.Messages[0].Text);
         Assert.True(telegramClient.ReplyMarkups[0]?.IsPersistent);
         Assert.Contains(
@@ -200,7 +200,7 @@ public sealed class TelegramBotCommandHandlerTests
         var text = telegramClient.Messages[0].Text;
         Assert.Contains("<b>Sasha &lt;Admin&gt; &amp; Co</b>", text);
         Assert.Contains("<code>JINGLE5</code>", text);
-        Assert.Contains("<code>https://front-web-pi.vercel.app/?ref=JINGLE5</code>", text);
+        Assert.Contains("<code>https://www.jingledecor.com.ua/?ref=JINGLE5</code>", text);
     }
 
     [Fact]
@@ -596,7 +596,7 @@ public sealed class TelegramBotCommandHandlerTests
     {
         var settings = new Dictionary<string, string?>
         {
-            ["Referral:PublicSiteUrl"] = "https://front-web-pi.vercel.app"
+            ["Referral:PublicSiteUrl"] = "https://www.jingledecor.com.ua"
         };
 
         if (!string.IsNullOrWhiteSpace(adminIds))
