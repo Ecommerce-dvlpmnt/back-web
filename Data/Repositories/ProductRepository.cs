@@ -21,6 +21,9 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         if (query.CategoryId.HasValue)
             products = products.Where(product => product.CategoryId == query.CategoryId.Value);
 
+        if (query.CategoryIds is { Count: > 0 })
+            products = products.Where(product => query.CategoryIds.Contains(product.CategoryId));
+
         if (query.SupplierId.HasValue)
             products = products.Where(product => product.SupplierId == query.SupplierId.Value);
 

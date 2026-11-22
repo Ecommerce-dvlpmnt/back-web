@@ -153,6 +153,7 @@ public sealed class UpdateProductStatusDto
 
 public sealed class PublicProductQueryParameters
 {
+    public List<Guid>? CategoryIds { get; set; }
     public bool Summary { get; set; }
     public Guid? CategoryId { get; set; }
     public string? Search { get; set; }
@@ -163,6 +164,7 @@ public sealed class PublicProductQueryParameters
 
 public sealed class ProductQueryParameters
 {
+    public List<Guid>? CategoryIds { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? SupplierId { get; set; }
     public string? Search { get; set; }

@@ -21,6 +21,7 @@ public sealed class ProductsController(IProductService productService) : Control
         var parameters = new ProductQueryParameters
         {
             CategoryId = query.CategoryId,
+            CategoryIds = query.CategoryIds,
             Search = query.Search,
             SortBy = query.SortBy,
             PageNumber = query.PageNumber,
