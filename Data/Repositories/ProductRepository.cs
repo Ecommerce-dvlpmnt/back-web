@@ -30,6 +30,13 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         if (query.OnlyActive == true)
             products = products.Where(product => product.IsActive);
 
+        if (query.MinPrice.HasValue)
+            products = products.Where(product => product.Price >= query.MinPrice.Value);
+        if (query.MaxPrice.HasValue)
+            products = products.Where(product => product.Price <= query.MaxPrice.Value);
+        if (query.InStock == true)
+            products = products.Where(product => product.Stock > 0);
+
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var search = query.Search.Trim();
