@@ -226,7 +226,8 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IReferralService, ReferralService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddHostedService<TelegramBotPollingService>();
+// Telegram polling перенесен в отдельный сервис tg-bot; back-web только отправляет уведомления о заказах
+// builder.Services.AddHostedService<TelegramBotPollingService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
