@@ -210,6 +210,10 @@ builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.AddHttpClient<IMonobankService, MonobankService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddHttpClient(TelegramBotClient.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(65);
