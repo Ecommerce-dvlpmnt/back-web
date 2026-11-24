@@ -51,7 +51,13 @@ public sealed record PartnerResponse(
     int DeliveredOrders = 0,
     decimal TotalTurnover = 0m,
     string? CardNumber = null,
-    string? CardHolderName = null);
+    string? CardHolderName = null,
+    string? InvitedByPartnerName = null,
+    string? InvitedByReferralCode = null,
+    int InvitedPartnersCount = 0,
+    IReadOnlyList<string>? InvitedPartnerNames = null,
+    decimal InvitedPartnersTurnover = 0m,
+    decimal InvitedPartnersEarned = 0m);
 
 public sealed record UpdateReferralPartnerRequest
 {
@@ -93,6 +99,9 @@ public sealed record BotRegisterPartnerRequest
 
     [Range(0.01, 100)]
     public decimal? CommissionPercent { get; init; }
+
+    [StringLength(32)]
+    public string? InvitedByReferralCode { get; init; }
 }
 
 public sealed record BotPartnerProfileResponse(

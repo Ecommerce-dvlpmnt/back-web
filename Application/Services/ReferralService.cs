@@ -301,9 +301,22 @@ public sealed class ReferralService(
             })
             .ToDictionaryAsync(x => x.PartnerId, cancellationToken);
 
+        var partnersById = partners.ToDictionary(p => p.Id);
+        var invitedLookup = partners
+            .Where(p => p.InvitedByPartnerId.HasValue)
+            .GroupBy(p => p.InvitedByPartnerId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         return partners.Select(p =>
         {
             var stats = orderStats.GetValueOrDefault(p.Id);
+            var inviter = p.InvitedByPartnerId.HasValue
+                ? partnersById.GetValueOrDefault(p.InvitedByPartnerId.Value)
+                : null;
+            var invitedList = invitedLookup.GetValueOrDefault(p.Id);
+            var invitedTurnover = invitedList?.Sum(x => orderStats.GetValueOrDefault(x.Id)?.TotalTurnover ?? 0m) ?? 0m;
+            var invitedEarned = invitedList?.Sum(x => x.TotalEarned + (orderStats.GetValueOrDefault(x.Id)?.PendingSum ?? 0m)) ?? 0m;
+            var invitedNames = invitedList?.Select(x => x.Name).ToArray();
 
             return new PartnerResponse(
                 p.Id,
@@ -319,7 +332,13 @@ public sealed class ReferralService(
                 stats?.DeliveredOrders ?? 0,
                 stats?.TotalTurnover ?? 0m,
                 p.CardNumber,
-                p.CardHolderName);
+                p.CardHolderName,
+                inviter?.Name,
+                inviter?.ReferralCode,
+                invitedList?.Count ?? 0,
+                invitedNames,
+                invitedTurnover,
+                invitedEarned);
         }).ToArray();
     }
 
@@ -610,6 +629,16 @@ public sealed class ReferralService(
             }
         }
 
+        Guid? invitedByPartnerId = null;
+        if (!string.IsNullOrWhiteSpace(request.InvitedByReferralCode))
+        {
+            var inviter = await FindPartnerByCodeAsync(request.InvitedByReferralCode, cancellationToken);
+            if (inviter is not null && inviter.TelegramUserId != request.TelegramUserId)
+            {
+                invitedByPartnerId = inviter.Id;
+            }
+        }
+
         var commission = request.CommissionPercent is > 0m and <= 100m
             ? Math.Round(request.CommissionPercent.Value, 2, MidpointRounding.AwayFromZero)
             : 3.0m;
@@ -622,6 +651,7 @@ public sealed class ReferralService(
             ReferralCode = code,
             CommissionPercent = commission,
             TotalEarned = 0m,
+            InvitedByPartnerId = invitedByPartnerId,
             CreatedAt = DateTime.UtcNow
         };
 

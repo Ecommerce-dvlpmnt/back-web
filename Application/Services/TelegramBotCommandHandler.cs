@@ -222,10 +222,14 @@ public sealed class TelegramBotCommandHandler(
             Бажаєте стати партнером та отримувати <b>3%</b> від суми кожного доставленого замовлення за вашим особистим посиланням?
             """;
 
+        var confirmCallbackData = inviter is not null
+            ? $"partner_reg_yes:{inviter.ReferralCode}"
+            : "partner_reg_yes";
+
         var optInMarkup = new TelegramInlineKeyboardMarkup(
         [
             [
-                new TelegramInlineKeyboardButton("✅ Так, стати партнером", "partner_reg_yes"),
+                new TelegramInlineKeyboardButton("✅ Так, стати партнером", confirmCallbackData),
                 new TelegramInlineKeyboardButton("❌ Ні, дякую", "partner_reg_no")
             ]
         ]);
@@ -776,9 +780,24 @@ public sealed class TelegramBotCommandHandler(
 
             builder.AppendLine();
             builder.AppendLine($"👤 <b>{Html(partner.Name)}</b> • код: <code>{Html(partner.ReferralCode)}</code> ({Percent(partner.CommissionPercent)}%)");
+            if (!string.IsNullOrWhiteSpace(partner.InvitedByPartnerName))
+            {
+                var inviterCode = !string.IsNullOrWhiteSpace(partner.InvitedByReferralCode)
+                    ? $" (<code>{Html(partner.InvitedByReferralCode)}</code>)"
+                    : string.Empty;
+                builder.AppendLine($"🔗 Привів: <b>{Html(partner.InvitedByPartnerName)}</b>{inviterCode}");
+            }
             builder.AppendLine($"👥 Запрошено замовлень: <b>{partner.TotalOrders}</b> (доставлено: <b>{partner.DeliveredOrders}</b>)");
             builder.AppendLine($"📈 Оборот: <b>{Money(partner.TotalTurnover)} грн</b>");
             builder.AppendLine($"💰 Доступно: <b>{Money(partner.AvailableBalance)} грн</b> • В холді: {Money(partner.PendingBalance)} грн");
+            if (partner.InvitedPartnersCount > 0)
+            {
+                var namesList = partner.InvitedPartnerNames is { Count: > 0 }
+                    ? $" ({string.Join(", ", partner.InvitedPartnerNames.Take(5).Select(Html))}{(partner.InvitedPartnerNames.Count > 5 ? "…" : string.Empty)})"
+                    : string.Empty;
+                builder.AppendLine($"🤝 Запросив у бот: <b>{partner.InvitedPartnersCount}</b>{namesList}");
+                builder.AppendLine($"📊 Оборот його запрошених: <b>{Money(partner.InvitedPartnersTurnover)} грн</b> • їхній бонус: <b>{Money(partner.InvitedPartnersEarned)} грн</b>");
+            }
             builder.Append($"💳 Картка: {cardInfo}");
             builder.AppendLine();
 
@@ -1041,7 +1060,7 @@ public sealed class TelegramBotCommandHandler(
     {
         var chatId = callbackQuery.Message?.Chat?.Id ?? user.Id;
 
-        if (data is "partner_reg_yes")
+        if (data is "partner_reg_yes" || data.StartsWith("partner_reg_yes:", StringComparison.OrdinalIgnoreCase))
         {
             if (TelegramBotMenu.IsAdmin(configuration, user.Id))
             {
@@ -1049,7 +1068,11 @@ public sealed class TelegramBotCommandHandler(
                 return;
             }
 
-            var (profile, created) = await EnsurePartnerAsync(user, cancellationToken);
+            var inviterCode = data.Contains(':')
+                ? data[(data.IndexOf(':') + 1)..].Trim()
+                : null;
+
+            var (profile, created) = await EnsurePartnerAsync(user, inviterCode, cancellationToken);
             await telegramBotClient.AnswerCallbackQueryAsync(
                 callbackQuery.Id,
                 created ? "🎉 Вітаємо в команді Jingle Decor!" : "Ви вже зареєстровані!",
@@ -1318,6 +1341,7 @@ public sealed class TelegramBotCommandHandler(
 
     private async Task<(BotPartnerProfileResponse Profile, bool Created)> EnsurePartnerAsync(
         TelegramUser user,
+        string? invitedByReferralCode,
         CancellationToken cancellationToken)
     {
         var existing = await referralService.GetBotPartnerProfileAsync(user.Id, cancellationToken);
@@ -1333,7 +1357,8 @@ public sealed class TelegramBotCommandHandler(
                 {
                     TelegramUserId = user.Id,
                     Name = BuildPartnerName(user),
-                    CommissionPercent = 3.0m
+                    CommissionPercent = 3.0m,
+                    InvitedByReferralCode = string.IsNullOrWhiteSpace(invitedByReferralCode) ? null : invitedByReferralCode
                 },
                 cancellationToken);
 
