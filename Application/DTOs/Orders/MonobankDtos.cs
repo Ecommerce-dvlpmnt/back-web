@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace EcommerceBackend.Application.DTOs.Orders;
@@ -7,6 +8,30 @@ public sealed record CreateMonobankPaymentRequest
 {
     /// <summary>Optional custom redirect URL after payment. If not set, defaults to server configuration.</summary>
     public string? RedirectUrl { get; init; }
+
+    /// <summary>Optional custom webhook URL. If not set, defaults to server configuration.</summary>
+    public string? WebhookUrl { get; init; }
+}
+
+/// <summary>Request payload for creating a custom or standalone test invoice.</summary>
+public sealed record CreateCustomMonobankInvoiceRequest
+{
+    /// <summary>Amount in kopecks (e.g. 10000 = 100.00 UAH). Default: 10000 (100 грн).</summary>
+    [Range(100, 100000000)]
+    public long AmountInKopecks { get; init; } = 10000;
+
+    /// <summary>Payment description / destination. Default: "Тестова оплата".</summary>
+    [StringLength(255)]
+    public string Destination { get; init; } = "Тестова оплата";
+
+    /// <summary>Redirect URL after payment. Default: https://mysite.com/payment-result.</summary>
+    public string RedirectUrl { get; init; } = "https://mysite.com/payment-result";
+
+    /// <summary>Webhook URL for receiving callbacks. Default: https://mysite.com/api/payment/webhook.</summary>
+    public string WebhookUrl { get; init; } = "https://mysite.com/api/payment/webhook";
+
+    /// <summary>Optional reference ID (e.g. order number).</summary>
+    public string? Reference { get; init; }
 }
 
 /// <summary>Response containing payment redirection details for the customer.</summary>
@@ -85,4 +110,11 @@ public sealed record MonobankInvoiceStatusResponse
 
     [JsonPropertyName("reference")]
     public string? Reference { get; init; }
+}
+
+/// <summary>Response from GET /api/merchant/pubkey.</summary>
+public sealed record MonobankPubKeyResponse
+{
+    [JsonPropertyName("key")]
+    public required string Key { get; init; }
 }

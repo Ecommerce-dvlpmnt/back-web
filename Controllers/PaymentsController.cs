@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Orders;
 using EcommerceBackend.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -28,30 +29,85 @@ public sealed class PaymentsController(
         var invoice = await monobankService.CreateInvoiceForOrderAsync(
             orderPublicId,
             request?.RedirectUrl,
+            request?.WebhookUrl,
             cancellationToken);
 
         return Ok(invoice);
     }
 
-    /// <summary>Офіційний вебхук від Monobank після зміни статусу оплати (успіх, скасування тощо).</summary>
-    [HttpPost("monobank/webhook")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> HandleMonobankWebhook(
-        [FromBody] MonobankWebhookPayload payload,
+    /// <summary>Створення тестового або довільного інвойсу в Monobank (за замовчуванням: 100 грн, "Тестова оплата").</summary>
+    [HttpPost("monobank/create-test-invoice")]
+    [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<MonobankInvoiceResponse>> CreateTestInvoice(
+        [FromBody] CreateCustomMonobankInvoiceRequest? request,
         CancellationToken cancellationToken)
     {
+        var customRequest = request ?? new CreateCustomMonobankInvoiceRequest();
+        var invoice = await monobankService.CreateCustomInvoiceAsync(customRequest, cancellationToken);
+        return Ok(invoice);
+    }
+
+    /// <summary>
+    /// Офіційний вебхук Monobank з перевіркою ECDSA підпису в заголовку X-Sign.
+    /// Доступний за обома маршрутами: /api/payments/monobank/webhook та /api/payment/webhook.
+    /// </summary>
+    [HttpPost("monobank/webhook")]
+    [HttpPost("/api/payment/webhook")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> HandleMonobankWebhook(CancellationToken cancellationToken)
+    {
+        // 1. Зчитуємо сире тіло запиту для перевірки підпису
+        Request.EnableBuffering();
+        using var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true);
+        var rawBody = await reader.ReadToEndAsync(cancellationToken);
+        Request.Body.Position = 0;
+
+        var rawBytes = Encoding.UTF8.GetBytes(rawBody);
+        var xSign = Request.Headers["X-Sign"].ToString();
+
+        logger.LogInformation("Отримано вебхук Monobank (довжина тіла: {Length} байт, X-Sign: {XSign})",
+            rawBytes.Length, string.IsNullOrWhiteSpace(xSign) ? "<MISSING>" : xSign[..Math.Min(16, xSign.Length)] + "...");
+
+        // 2. Верифікація підпису ECDSA
+        var isSignatureValid = await monobankService.VerifyWebhookSignatureAsync(rawBytes, xSign, cancellationToken);
+        if (!isSignatureValid)
+        {
+            logger.LogWarning("Відхилено вебхук Monobank: недійсний або відсутній підпис X-Sign.");
+            return Unauthorized("Недійсний підпис X-Sign від Monobank.");
+        }
+
+        // 3. Десеріалізація та обробка
+        MonobankWebhookPayload? payload;
         try
         {
-            logger.LogInformation("Отримано вебхук Monobank для інвойсу {InvoiceId}, статус: {Status}",
-                payload.InvoiceId, payload.Status);
+            payload = JsonSerializer.Deserialize<MonobankWebhookPayload>(rawBody, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Помилка десеріалізації тіла вебхука Monobank: {RawBody}", rawBody);
+            return BadRequest("Некоректний формат JSON.");
+        }
 
+        if (payload is null)
+        {
+            logger.LogWarning("Пусте тіло вебхука Monobank.");
+            return BadRequest("Пусте тіло вебхука.");
+        }
+
+        try
+        {
             await monobankService.ProcessWebhookAsync(payload, cancellationToken);
             return Ok();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Помилка при обробці вебхука Monobank для інвойсу {InvoiceId}", payload.InvoiceId);
-            // Завжди повертаємо 200 для банку, щоб він не спамив повторними запитами при бізнес-помилках
+            // Завжди повертаємо 200 банку, щоб уникнути спаму повторними запитами при бізнес-помилках
             return Ok();
         }
     }

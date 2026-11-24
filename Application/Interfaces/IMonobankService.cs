@@ -9,9 +9,21 @@ public interface IMonobankService
     Task<MonobankInvoiceResponse> CreateInvoiceForOrderAsync(
         string orderPublicId,
         string? customRedirectUrl = null,
+        string? customWebhookUrl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Processes an incoming webhook from Monobank, updating order status and triggers notifications.</summary>
+    /// <summary>Creates a standalone test/custom invoice in Monobank.</summary>
+    Task<MonobankInvoiceResponse> CreateCustomInvoiceAsync(
+        CreateCustomMonobankInvoiceRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Verifies the ECDSA signature sent by Monobank in the X-Sign header against the raw body bytes.</summary>
+    Task<bool> VerifyWebhookSignatureAsync(
+        byte[] rawBodyBytes,
+        string? xSignBase64,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Processes a verified incoming webhook from Monobank, updating order status in DB and sending notifications.</summary>
     Task<OrderPaymentConfirmationResponse?> ProcessWebhookAsync(
         MonobankWebhookPayload payload,
         CancellationToken cancellationToken = default);
