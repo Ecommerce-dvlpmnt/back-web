@@ -1,10 +1,13 @@
+using System.Reflection;
 using System.Text;
 using EcommerceBackend.Application.DTOs.Orders;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Controllers;
 using EcommerceBackend.Domain.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -79,7 +82,7 @@ public sealed class PaymentsControllerTests
             NullLogger<PaymentsController>.Instance);
 
         var httpContext = new DefaultHttpContext();
-        var json = "{\"invoiceId\":\"inv-1\",\"status\":\"success\",\"amount\":10000}";
+        var json = "{\"invoiceId\":\"inv-1\",\"status\":\"success\",\"amount\":10000,\"ccy\":980}";
         httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(json));
         httpContext.Request.Headers["X-Sign"] = "invalid-sig";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
@@ -92,7 +95,7 @@ public sealed class PaymentsControllerTests
     }
 
     [Fact]
-    public async Task HandleMonobankWebhook_ReturnsOk_WhenSignatureIsValid()
+    public async Task HandleMonobankWebhook_ReturnsOk_AndPassesExactRawBytes_WhenSignatureIsValid()
     {
         var orderService = new FakeOrderService();
         var monobankService = new FakeMonobankService { VerifySignatureResult = true };
@@ -104,8 +107,9 @@ public sealed class PaymentsControllerTests
             NullLogger<PaymentsController>.Instance);
 
         var httpContext = new DefaultHttpContext();
-        var json = "{\"invoiceId\":\"inv-1\",\"status\":\"success\",\"amount\":10000,\"reference\":\"ref-1\"}";
-        httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var json = "{\"invoiceId\":\"inv-1\",\"status\":\"success\",\"amount\":10000,\"ccy\":980,\"reference\":\"ref-1\"}";
+        var expectedBytes = Encoding.UTF8.GetBytes(json);
+        httpContext.Request.Body = new MemoryStream(expectedBytes);
         httpContext.Request.Headers["X-Sign"] = "valid-sig";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
@@ -114,10 +118,55 @@ public sealed class PaymentsControllerTests
         var ok = Assert.IsType<OkResult>(result);
         Assert.Equal(200, ok.StatusCode);
         Assert.True(monobankService.ProcessWebhookCalled);
+        Assert.Equal(expectedBytes, monobankService.LastVerifiedRawBytes);
     }
 
     [Fact]
-    public async Task DownloadFiscalCheckPdf_ReturnsFileResult_WhenPdfExists()
+    public async Task HandleMonobankWebhook_PropagatesDatabaseException_SoMonobankCanRetry()
+    {
+        var orderService = new FakeOrderService();
+        var monobankService = new FakeMonobankService
+        {
+            VerifySignatureResult = true,
+            WebhookExceptionToThrow = new DbUpdateException("Simulated transient DB failure")
+        };
+        var config = new ConfigurationBuilder().Build();
+        var controller = new PaymentsController(
+            orderService,
+            monobankService,
+            config,
+            NullLogger<PaymentsController>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        var json = "{\"invoiceId\":\"inv-1\",\"status\":\"success\",\"amount\":10000,\"ccy\":980,\"reference\":\"ref-1\"}";
+        httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        httpContext.Request.Headers["X-Sign"] = "valid-sig";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => controller.HandleMonobankWebhook(CancellationToken.None));
+    }
+
+    [Fact]
+    public void CustomAndFiscalTestEndpoints_RequireAdminRoleAuthorization()
+    {
+        var fiscalMethod = typeof(PaymentsController).GetMethod(nameof(PaymentsController.CreateFiscalInvoice));
+        var testMethod = typeof(PaymentsController).GetMethod(nameof(PaymentsController.CreateTestInvoice));
+
+        Assert.NotNull(fiscalMethod);
+        Assert.NotNull(testMethod);
+
+        var fiscalAuth = fiscalMethod.GetCustomAttribute<AuthorizeAttribute>();
+        var testAuth = testMethod.GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.NotNull(fiscalAuth);
+        Assert.Equal("Admin", fiscalAuth.Roles);
+
+        Assert.NotNull(testAuth);
+        Assert.Equal("Admin", testAuth.Roles);
+    }
+
+    [Fact]
+    public async Task DownloadFiscalCheckPdf_ReturnsSanitizedFileResult_AndRequiresOrderMatchForPublicCaller()
     {
         var orderService = new FakeOrderService();
         var monobankService = new FakeMonobankService
@@ -131,11 +180,12 @@ public sealed class PaymentsControllerTests
             config,
             NullLogger<PaymentsController>.Instance);
 
-        var result = await controller.DownloadFiscalCheckPdf("test-inv", CancellationToken.None);
+        var result = await controller.DownloadFiscalCheckPdf("test-inv/../evil", CancellationToken.None);
 
         var fileResult = Assert.IsType<FileContentResult>(result);
         Assert.Equal("application/pdf", fileResult.ContentType);
-        Assert.Equal("fiscal_check_test-inv.pdf", fileResult.FileDownloadName);
+        Assert.Equal("fiscal_check_test-invevil.pdf", fileResult.FileDownloadName);
+        Assert.True(monobankService.LastRequireOrderMatch);
         Assert.NotEmpty(fileResult.FileContents);
     }
 
@@ -143,14 +193,15 @@ public sealed class PaymentsControllerTests
     {
         public bool VerifySignatureResult { get; set; } = true;
         public bool ProcessWebhookCalled { get; private set; }
+        public byte[]? LastVerifiedRawBytes { get; private set; }
+        public bool LastRequireOrderMatch { get; private set; }
+        public Exception? WebhookExceptionToThrow { get; set; }
         public byte[]? PdfBytesResult { get; set; }
 
         public Task<MonobankInvoiceResponse> CreateInvoiceForOrderAsync(
             string orderPublicId,
-            string? customRedirectUrl = null,
-            string? customWebhookUrl = null,
             CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+            Task.FromResult(new MonobankInvoiceResponse { InvoiceId = "ord_inv", PageUrl = "https://pay.mbank.biz/ord" });
 
         public Task<MonobankInvoiceResponse> CreateCustomInvoiceAsync(
             CreateCustomMonobankInvoiceRequest request,
@@ -162,34 +213,57 @@ public sealed class PaymentsControllerTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new MonobankInvoiceResponse { InvoiceId = "test_fiscal", PageUrl = "https://pay.mbank.biz/test_fiscal" });
 
+        public Task<MonobankOrderPaymentStatusResponse?> GetOrderPaymentStatusAsync(
+            string orderPublicId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<MonobankOrderPaymentStatusResponse?>(null);
+
         public Task<MonobankFiscalChecksResponse> GetFiscalChecksAsync(
             string invoiceId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new MonobankFiscalChecksResponse());
+            bool requireOrderMatch = true,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequireOrderMatch = requireOrderMatch;
+            return Task.FromResult(new MonobankFiscalChecksResponse());
+        }
 
         public Task<byte[]?> GetFiscalCheckPdfBytesAsync(
             string invoiceId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(PdfBytesResult);
+            bool requireOrderMatch = true,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequireOrderMatch = requireOrderMatch;
+            return Task.FromResult(PdfBytesResult);
+        }
 
         public Task<bool> VerifyWebhookSignatureAsync(
             byte[] rawBodyBytes,
             string? xSignBase64,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(VerifySignatureResult);
+            CancellationToken cancellationToken = default)
+        {
+            LastVerifiedRawBytes = rawBodyBytes;
+            return Task.FromResult(VerifySignatureResult);
+        }
 
         public Task<OrderPaymentConfirmationResponse?> ProcessWebhookAsync(
             MonobankWebhookPayload payload,
             CancellationToken cancellationToken = default)
         {
+            if (WebhookExceptionToThrow is not null)
+                throw WebhookExceptionToThrow;
+
             ProcessWebhookCalled = true;
             return Task.FromResult<OrderPaymentConfirmationResponse?>(null);
         }
 
         public Task<MonobankInvoiceStatusResponse> GetInvoiceStatusAsync(
             string invoiceId,
-            CancellationToken cancellationToken = default) =>
+            bool requireOrderMatch = true,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequireOrderMatch = requireOrderMatch;
             throw new NotImplementedException();
+        }
     }
 
     private sealed class FakeOrderService : IOrderService

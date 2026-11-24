@@ -200,6 +200,9 @@ public sealed record PaymentWebhookRequest
 
     [Required]
     public PaymentStatus PaymentStatus { get; init; } = PaymentStatus.Paid;
+
+    [StringLength(500)]
+    public string? Comment { get; init; }
 }
 
 public sealed record OrderPaymentConfirmationResponse(

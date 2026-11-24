@@ -1,9 +1,13 @@
+using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Orders;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Application.Telegram;
 using EcommerceBackend.Data;
+using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -16,22 +20,26 @@ public sealed class MonobankService(
     IOrderService orderService,
     AppDbContext dbContext,
     IConfiguration configuration,
-    ILogger<MonobankService> logger) : IMonobankService
+    ILogger<MonobankService> logger,
+    ITelegramBotClient? telegramBotClient = null) : IMonobankService
 {
     private const string DefaultBaseUrl = "https://api.monobank.ua";
+    private const string DefaultPublicSiteUrl = "https://www.jingledecor.com.ua";
+    private static readonly TimeSpan PubKeyRefreshCooldown = TimeSpan.FromMinutes(5);
+
     private static string? _cachedPublicKey;
+    private static DateTime _lastPubKeyFetchUtc = DateTime.MinValue;
     private static readonly SemaphoreSlim _pubKeyLock = new(1, 1);
 
     public async Task<MonobankInvoiceResponse> CreateInvoiceForOrderAsync(
         string orderPublicId,
-        string? customRedirectUrl = null,
-        string? customWebhookUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(orderPublicId);
 
         var order = await dbContext.Orders
             .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
             .FirstOrDefaultAsync(o => o.PublicId == orderPublicId, cancellationToken)
             ?? throw new KeyNotFoundException($"Замовлення '{orderPublicId}' не знайдено.");
 
@@ -40,35 +48,41 @@ public sealed class MonobankService(
             throw new InvalidOperationException($"Замовлення '{orderPublicId}' вже успішно оплачене.");
         }
 
-        var redirectUrl = customRedirectUrl
-            ?? configuration["Monobank:RedirectUrl"]
-            ?? configuration["MONOBANK_REDIRECT_URL"]
-            ?? $"{configuration["Referral:PublicSiteUrl"] ?? "https://www.jingledecor.com.ua"}/payment-result";
+        if (order.OrderStatus is OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned)
+        {
+            throw new InvalidOperationException($"Не можна створити оплату для скасованого замовлення '{orderPublicId}'.");
+        }
 
-        var webhookUrl = customWebhookUrl
-            ?? configuration["Monobank:WebhookUrl"]
-            ?? configuration["MONOBANK_WEBHOOK_URL"]
-            ?? "https://mysite.com/api/payment/webhook";
+        var redirectUrl = BuildOrderRedirectUrl(order.PublicId);
+        var webhookUrl = ResolveConfiguredWebhookUrl();
+        var defaultTaxCode = configuration.GetValue<int>("Monobank:TaxCode", 0);
 
-        // Map items to fiscal format
         var fiscalItems = order.Items.Select(item =>
         {
-            var unitSum = (long)Math.Round(item.UnitPrice * 100m, MidpointRounding.AwayFromZero);
-            var itemTotal = (long)Math.Round(item.UnitPrice * item.Quantity * 100m, MidpointRounding.AwayFromZero);
+            var unitSum = checked((long)Math.Round(item.UnitPrice * 100m, MidpointRounding.AwayFromZero));
+            var itemTotal = checked(unitSum * item.Quantity);
+            var sku = !string.IsNullOrWhiteSpace(item.Product?.Sku)
+                ? item.Product.Sku.Trim()
+                : item.ProductId.ToString("N")[..8].ToUpperInvariant();
+
             return new MonobankFiscalItemDto
             {
                 Name = item.ProductNameSnapshot,
                 Qty = item.Quantity,
                 Sum = unitSum,
                 Total = itemTotal,
-                Code = item.ProductId.ToString("N")[..8].ToUpperInvariant(),
-                Tax = [0], // Без ПДВ за замовчуванням (або [1] для 20%)
+                Code = sku,
+                Tax = [defaultTaxCode],
                 Unit = "шт."
             };
         }).ToList();
 
+        var subtotalKopecks = fiscalItems.Sum(i => i.Total);
+        var expectedOrderKopecks = checked((long)Math.Round(order.TotalPrice * 100m, MidpointRounding.AwayFromZero));
+        var discountDiffKopecks = subtotalKopecks - expectedOrderKopecks;
+
         List<MonobankDiscountDto>? discounts = null;
-        if (order.DiscountAmount > 0)
+        if (discountDiffKopecks > 0)
         {
             discounts =
             [
@@ -76,7 +90,19 @@ public sealed class MonobankService(
                 {
                     Type = "discount",
                     Mode = "value",
-                    Value = (long)Math.Round(order.DiscountAmount * 100m, MidpointRounding.AwayFromZero)
+                    Value = discountDiffKopecks
+                }
+            ];
+        }
+        else if (discountDiffKopecks < 0)
+        {
+            discounts =
+            [
+                new MonobankDiscountDto
+                {
+                    Type = "extra",
+                    Mode = "value",
+                    Value = Math.Abs(discountDiffKopecks)
                 }
             ];
         }
@@ -85,18 +111,32 @@ public sealed class MonobankService(
         {
             BasketOrder = fiscalItems,
             CartDiscounts = discounts,
-            Destination = $"Оплата замовлення {order.PublicId}",
+            Destination = $"Оплата замовлення #{order.OrderNumber}",
             Reference = order.PublicId,
             RedirectUrl = redirectUrl,
             WebhookUrl = webhookUrl
         };
 
-        return await CreateFiscalInvoiceAsync(fiscalRequest, cancellationToken);
+        var invoiceResult = await CreateFiscalInvoiceCoreAsync(fiscalRequest, isInternalOrderCall: true, cancellationToken);
+
+        // Прив'язуємо створений invoiceId до замовлення одразу після відповіді банку
+        order.ExternalPaymentId = invoiceResult.InvoiceId;
+        order.PaymentProvider = "Monobank";
+        order.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return invoiceResult;
     }
 
-    public async Task<MonobankInvoiceResponse> CreateFiscalInvoiceAsync(
+    public Task<MonobankInvoiceResponse> CreateFiscalInvoiceAsync(
         CreateFiscalInvoiceRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CreateFiscalInvoiceCoreAsync(request, isInternalOrderCall: false, cancellationToken);
+
+    private async Task<MonobankInvoiceResponse> CreateFiscalInvoiceCoreAsync(
+        CreateFiscalInvoiceRequest request,
+        bool isInternalOrderCall,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -105,20 +145,49 @@ public sealed class MonobankService(
             throw new ArgumentException("Кошик повинен містити хоча б один товар.", nameof(request));
         }
 
-        var token = GetToken();
+        var reference = string.IsNullOrWhiteSpace(request.Reference)
+            ? $"fiscal_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"
+            : request.Reference.Trim();
 
-        // 1. Обробка товарів та перевірка/розрахунок сум кожного товару
+        if (!isInternalOrderCall)
+        {
+            var collidesWithOrder = await dbContext.Orders
+                .AsNoTracking()
+                .AnyAsync(o => o.PublicId == reference, cancellationToken);
+
+            if (collidesWithOrder)
+            {
+                throw new InvalidOperationException(
+                    "Для оплати існуючого замовлення використовуйте метод CreateInvoiceForOrderAsync.");
+            }
+        }
+
+        var token = GetToken();
+        var defaultTaxCode = configuration.GetValue<int>("Monobank:TaxCode", 0);
+
+        // 1. Сувора перевірка та розрахунок сум позицій кошика до копійки
         long subtotal = 0;
-        var formattedBasket = new List<object>();
+        var formattedBasket = new List<object>(request.BasketOrder.Count);
 
         foreach (var item in request.BasketOrder)
         {
-            // Якщо total не задано, обчислюємо: round(qty * sum)
-            var lineTotal = item.Total > 0
-                ? item.Total
-                : (long)Math.Round(item.Qty * item.Sum, MidpointRounding.AwayFromZero);
+            if (string.IsNullOrWhiteSpace(item.Name))
+                throw new ArgumentException("Назва товару в чеку не може бути порожньою.", nameof(request));
 
-            // Обробка знижок на рівні конкретного товару
+            if (item.Qty <= 0m || item.Qty > 100_000m)
+                throw new ArgumentException($"Некоректна кількість для позиції '{item.Name}'.", nameof(request));
+
+            if (item.Sum <= 0 || item.Sum > 100_000_000L)
+                throw new ArgumentException($"Некоректна ціна для позиції '{item.Name}'.", nameof(request));
+
+            var lineTotal = checked((long)Math.Round(item.Qty * item.Sum, MidpointRounding.AwayFromZero));
+            if (item.Total > 0 && item.Total != lineTotal)
+            {
+                throw new ArgumentException(
+                    $"Поле total ({item.Total}) для товару '{item.Name}' не збігається з qty * sum ({lineTotal}).",
+                    nameof(request));
+            }
+
             long itemFinalTotal = lineTotal;
             List<object>? itemDiscountsFormatted = null;
 
@@ -127,35 +196,37 @@ public sealed class MonobankService(
                 itemDiscountsFormatted = [];
                 foreach (var d in item.Discounts)
                 {
-                    var isDiscount = d.Type.Equals("discount", StringComparison.OrdinalIgnoreCase);
-                    var isPercent = d.Mode.Equals("percent", StringComparison.OrdinalIgnoreCase);
-
-                    long diff = isPercent
-                        ? (long)Math.Round(lineTotal * (d.Value / 100m), MidpointRounding.AwayFromZero)
-                        : (long)d.Value;
-
-                    itemFinalTotal = isDiscount ? (itemFinalTotal - diff) : (itemFinalTotal + diff);
+                    var (normType, normMode, diff) = CalculateDiscountAdjustment(lineTotal, d);
+                    itemFinalTotal = normType == "discount"
+                        ? checked(itemFinalTotal - diff)
+                        : checked(itemFinalTotal + diff);
 
                     itemDiscountsFormatted.Add(new
                     {
-                        type = d.Type.ToLowerInvariant(),
-                        mode = d.Mode.ToLowerInvariant(),
+                        type = normType,
+                        mode = normMode,
                         value = d.Value
                     });
                 }
+
+                if (itemFinalTotal <= 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Сума позиції '{item.Name}' після застосування знижки повинна бути більшою за 0.");
+                }
             }
 
-            subtotal += itemFinalTotal;
+            subtotal = checked(subtotal + itemFinalTotal);
 
             var itemObj = new Dictionary<string, object?>
             {
-                ["name"] = item.Name,
+                ["name"] = item.Name.Trim(),
                 ["qty"] = item.Qty,
                 ["sum"] = item.Sum,
                 ["total"] = lineTotal,
-                ["code"] = item.Code ?? "ITEM",
-                ["tax"] = item.Tax ?? [0],
-                ["unit"] = item.Unit ?? "шт."
+                ["code"] = string.IsNullOrWhiteSpace(item.Code) ? "ITEM" : item.Code.Trim(),
+                ["tax"] = item.Tax is { Count: > 0 } ? item.Tax : new[] { defaultTaxCode },
+                ["unit"] = string.IsNullOrWhiteSpace(item.Unit) ? "шт." : item.Unit.Trim()
             };
 
             if (!string.IsNullOrWhiteSpace(item.Barcode))
@@ -163,7 +234,7 @@ public sealed class MonobankService(
                 itemObj["barcode"] = item.Barcode.Trim();
             }
 
-            if (itemDiscountsFormatted != null && itemDiscountsFormatted.Count > 0)
+            if (itemDiscountsFormatted is { Count: > 0 })
             {
                 itemObj["discounts"] = itemDiscountsFormatted;
             }
@@ -180,33 +251,32 @@ public sealed class MonobankService(
             cartDiscountsFormatted = [];
             foreach (var d in request.CartDiscounts)
             {
-                var isDiscount = d.Type.Equals("discount", StringComparison.OrdinalIgnoreCase);
-                var isPercent = d.Mode.Equals("percent", StringComparison.OrdinalIgnoreCase);
-
-                long diff = isPercent
-                    ? (long)Math.Round(subtotal * (d.Value / 100m), MidpointRounding.AwayFromZero)
-                    : (long)d.Value;
-
-                finalInvoiceAmount = isDiscount ? (finalInvoiceAmount - diff) : (finalInvoiceAmount + diff);
+                var (normType, normMode, diff) = CalculateDiscountAdjustment(subtotal, d);
+                finalInvoiceAmount = normType == "discount"
+                    ? checked(finalInvoiceAmount - diff)
+                    : checked(finalInvoiceAmount + diff);
 
                 cartDiscountsFormatted.Add(new
                 {
-                    type = d.Type.ToLowerInvariant(),
-                    mode = d.Mode.ToLowerInvariant(),
+                    type = normType,
+                    mode = normMode,
                     value = d.Value
                 });
             }
         }
 
-        // Страховка від від'ємної суми
         if (finalInvoiceAmount <= 0)
         {
-            finalInvoiceAmount = 100; // мінімум 1 грн (100 коп)
+            throw new InvalidOperationException("Підсумкова сума інвойсу після знижок повинна бути більшою за 0 копійок.");
         }
 
-        var reference = string.IsNullOrWhiteSpace(request.Reference)
-            ? $"fiscal_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"
-            : request.Reference.Trim();
+        var redirectUrl = !string.IsNullOrWhiteSpace(request.RedirectUrl) && !ContainsPlaceholderDomain(request.RedirectUrl)
+            ? request.RedirectUrl.Trim()
+            : ResolveConfiguredRedirectUrl();
+
+        var webhookUrl = !string.IsNullOrWhiteSpace(request.WebhookUrl) && !ContainsPlaceholderDomain(request.WebhookUrl)
+            ? request.WebhookUrl.Trim()
+            : ResolveConfiguredWebhookUrl();
 
         var merchantPaymInfo = new Dictionary<string, object?>
         {
@@ -216,20 +286,24 @@ public sealed class MonobankService(
             ["basketOrder"] = formattedBasket
         };
 
-        if (cartDiscountsFormatted != null && cartDiscountsFormatted.Count > 0)
+        if (cartDiscountsFormatted is { Count: > 0 })
         {
             merchantPaymInfo["discounts"] = cartDiscountsFormatted;
         }
 
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            amount = finalInvoiceAmount,
-            ccy = 980, // UAH
-            merchantPaymInfo,
-            redirectUrl = request.RedirectUrl,
-            webHookUrl = request.WebhookUrl,
-            validity = 3600
+            ["amount"] = finalInvoiceAmount,
+            ["ccy"] = 980, // UAH
+            ["merchantPaymInfo"] = merchantPaymInfo,
+            ["redirectUrl"] = redirectUrl,
+            ["validity"] = 3600
         };
+
+        if (!string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            payload["webHookUrl"] = webhookUrl;
+        }
 
         var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/create";
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, requestUri);
@@ -268,6 +342,12 @@ public sealed class MonobankService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (request.AmountInKopecks <= 0 || request.AmountInKopecks > 100_000_000L)
+        {
+            throw new ArgumentException("Сума платежу повинна бути більшою за 0.", nameof(request));
+        }
+
+        var defaultTaxCode = configuration.GetValue<int>("Monobank:TaxCode", 0);
         var defaultItem = new MonobankFiscalItemDto
         {
             Name = request.Destination,
@@ -275,7 +355,7 @@ public sealed class MonobankService(
             Sum = request.AmountInKopecks,
             Total = request.AmountInKopecks,
             Code = "CUSTOM",
-            Tax = [0],
+            Tax = [defaultTaxCode],
             Unit = "шт."
         };
 
@@ -288,21 +368,69 @@ public sealed class MonobankService(
             WebhookUrl = request.WebhookUrl
         };
 
-        return await CreateFiscalInvoiceAsync(fiscalRequest, cancellationToken);
+        return await CreateFiscalInvoiceCoreAsync(fiscalRequest, isInternalOrderCall: false, cancellationToken);
+    }
+
+    public async Task<MonobankOrderPaymentStatusResponse?> GetOrderPaymentStatusAsync(
+        string orderPublicId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orderPublicId))
+            return null;
+
+        var normalizedId = orderPublicId.Trim();
+        var order = await dbContext.Orders
+            .AsNoTracking()
+            .Where(o => o.PublicId == normalizedId)
+            .Select(o => new
+            {
+                o.PublicId,
+                o.OrderNumber,
+                o.TotalPrice,
+                o.PaymentStatus,
+                o.OrderStatus,
+                o.ExternalPaymentId
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (order is null)
+            return null;
+
+        var isPaid = order.PaymentStatus == PaymentStatus.Paid;
+        var canRetry = !isPaid && order.OrderStatus is not (OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned);
+        var receiptAvailable = isPaid && !string.IsNullOrWhiteSpace(order.ExternalPaymentId);
+
+        return new MonobankOrderPaymentStatusResponse(
+            OrderPublicId: order.PublicId,
+            OrderNumber: order.OrderNumber,
+            TotalPrice: order.TotalPrice,
+            PaymentStatus: order.PaymentStatus,
+            OrderStatus: order.OrderStatus,
+            InvoiceId: order.ExternalPaymentId,
+            IsPaid: isPaid,
+            CanRetryPayment: canRetry,
+            ReceiptAvailable: receiptAvailable);
     }
 
     public async Task<MonobankFiscalChecksResponse> GetFiscalChecksAsync(
         string invoiceId,
+        bool requireOrderMatch = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(invoiceId);
+        var cleanId = invoiceId.Trim();
+
+        if (requireOrderMatch)
+        {
+            await EnsureInvoiceBelongsToOrderAsync(cleanId, cancellationToken);
+        }
 
         var token = GetToken();
-        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/fiscal-checks?invoiceId={Uri.EscapeDataString(invoiceId)}";
+        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/fiscal-checks?invoiceId={Uri.EscapeDataString(cleanId)}";
         using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
         requestMessage.Headers.Add("X-Token", token);
 
-        logger.LogInformation("Fetching fiscal checks for invoice {InvoiceId}", invoiceId);
+        logger.LogInformation("Fetching fiscal checks for invoice {InvoiceId}", cleanId);
 
         var response = await httpClient.SendAsync(requestMessage, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -310,7 +438,7 @@ public sealed class MonobankService(
         if (!response.IsSuccessStatusCode)
         {
             logger.LogError("Monobank fiscal checks retrieval failed for invoice {InvoiceId}. Status: {StatusCode}, Body: {Body}",
-                invoiceId, response.StatusCode, responseContent);
+                cleanId, response.StatusCode, responseContent);
             throw new HttpRequestException($"Помилка отримання фіскальних чеків з Monobank: {responseContent}");
         }
 
@@ -320,16 +448,16 @@ public sealed class MonobankService(
 
     public async Task<byte[]?> GetFiscalCheckPdfBytesAsync(
         string invoiceId,
+        bool requireOrderMatch = true,
         CancellationToken cancellationToken = default)
     {
-        var checksResponse = await GetFiscalChecksAsync(invoiceId, cancellationToken);
+        var checksResponse = await GetFiscalChecksAsync(invoiceId, requireOrderMatch, cancellationToken);
         if (checksResponse.Checks == null || checksResponse.Checks.Count == 0)
         {
             logger.LogWarning("No fiscal checks found for invoice {InvoiceId}", invoiceId);
             return null;
         }
 
-        // Шукаємо чек операції продажу (sale)
         var saleCheck = checksResponse.Checks.FirstOrDefault(c => c.Type == "sale" && !string.IsNullOrWhiteSpace(c.FileBase64))
             ?? checksResponse.Checks.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.FileBase64));
 
@@ -356,31 +484,33 @@ public sealed class MonobankService(
         string? xSignBase64,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(xSignBase64))
+        if (rawBodyBytes is null || rawBodyBytes.Length == 0 || string.IsNullOrWhiteSpace(xSignBase64))
         {
-            logger.LogWarning("Monobank webhook rejected: missing X-Sign header.");
+            logger.LogWarning("Monobank webhook rejected: empty body or missing X-Sign header.");
             return false;
         }
 
         var pubKey = await GetPublicKeyAsync(forceRefresh: false, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(pubKey))
+        if (!string.IsNullOrWhiteSpace(pubKey) && CheckSignature(rawBodyBytes, xSignBase64, pubKey))
         {
-            if (CheckSignature(rawBodyBytes, xSignBase64, pubKey))
+            return true;
+        }
+
+        // Захист від спаму запитами /api/merchant/pubkey при флуді підробленими X-Sign:
+        // оновлюємо публічний ключ не частіше 1 разу на 5 хвилин
+        if (DateTime.UtcNow - _lastPubKeyFetchUtc >= PubKeyRefreshCooldown)
+        {
+            logger.LogWarning("Monobank signature verification failed with cached key. Refreshing public key from API...");
+            pubKey = await GetPublicKeyAsync(forceRefresh: true, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(pubKey) && CheckSignature(rawBodyBytes, xSignBase64, pubKey))
             {
+                logger.LogInformation("Monobank signature verification succeeded after public key refresh.");
                 return true;
             }
         }
 
-        logger.LogWarning("Monobank signature verification failed with cached key. Refreshing public key from API...");
-        pubKey = await GetPublicKeyAsync(forceRefresh: true, cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(pubKey) && CheckSignature(rawBodyBytes, xSignBase64, pubKey))
-        {
-            logger.LogInformation("Monobank signature verification succeeded after public key refresh.");
-            return true;
-        }
-
-        logger.LogError("Monobank webhook signature verification failed permanently.");
+        logger.LogError("Monobank webhook signature verification failed.");
         return false;
     }
 
@@ -391,94 +521,159 @@ public sealed class MonobankService(
         ArgumentNullException.ThrowIfNull(payload);
 
         logger.LogInformation(
-            "MONOBANK WEBHOOK RECEIVED => InvoiceId={InvoiceId}, Status={Status}, Amount={Amount} kop, Ref={Reference}, FailureReason={FailureReason}, Modified={ModifiedDate}",
-            payload.InvoiceId, payload.Status, payload.Amount, payload.Reference, payload.FailureReason, payload.ModifiedDate);
+            "MONOBANK WEBHOOK RECEIVED => InvoiceId={InvoiceId}, Status={Status}, Amount={Amount} kop, FinalAmount={FinalAmount}, Ccy={Ccy}, Ref={Reference}, FailureReason={FailureReason}, Modified={ModifiedDate}",
+            payload.InvoiceId, payload.Status, payload.Amount, payload.FinalAmount, payload.Ccy, payload.Reference, payload.FailureReason, payload.ModifiedDate);
 
-        if (string.IsNullOrWhiteSpace(payload.Reference))
+        var reference = payload.Reference?.Trim();
+        var invoiceId = payload.InvoiceId.Trim();
+
+        if (string.IsNullOrWhiteSpace(reference) && string.IsNullOrWhiteSpace(invoiceId))
         {
-            logger.LogWarning("Monobank webhook does not contain a Reference (Order Public ID).");
+            logger.LogWarning("Monobank webhook missing both Reference and InvoiceId.");
             return null;
         }
 
-        var order = await dbContext.Orders
-            .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.PublicId == payload.Reference || o.ExternalPaymentId == payload.InvoiceId, cancellationToken);
+        // Snapshot без трекінгу, щоб не конфліктувати з транзакцією FOR UPDATE в OrderService
+        var orderSnapshot = await dbContext.Orders
+            .AsNoTracking()
+            .Where(o => (reference != null && o.PublicId == reference) || o.ExternalPaymentId == invoiceId)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderNumber,
+                o.PublicId,
+                o.TotalPrice,
+                o.PaymentStatus,
+                o.ExternalPaymentId
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var now = DateTime.UtcNow;
-        var amountUah = payload.Amount / 100m;
-        var logEntry = $"[Monobank {now:yyyy-MM-dd HH:mm:ss}] Invoice={payload.InvoiceId}, Status={payload.Status}, Amount={amountUah:F2} UAH" +
-                       (string.IsNullOrWhiteSpace(payload.FailureReason) ? "" : $", Reason={payload.FailureReason}");
-
-        if (order is not null)
+        if (orderSnapshot is null)
         {
-            order.ExternalPaymentId = payload.InvoiceId;
-            order.PaymentProvider = "Monobank";
-            order.UpdatedAt = now;
-            order.AdminComment = string.IsNullOrWhiteSpace(order.AdminComment)
-                ? logEntry
-                : $"{order.AdminComment}\n{logEntry}";
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Updated order {OrderPublicId} with payment metadata in database.", order.PublicId);
-        }
-        else
-        {
-            logger.LogWarning("No order found matching reference '{Reference}' or invoice '{InvoiceId}'. Payment details logged.",
-                payload.Reference, payload.InvoiceId);
+            logger.LogWarning("No order found matching reference '{Reference}' or invoice '{InvoiceId}'.",
+                reference, invoiceId);
+            return null;
         }
 
         var normalizedStatus = payload.Status.ToLowerInvariant().Trim();
+
+        // 1. Ідемпотентність: якщо замовлення вже оплачене і це не повернення коштів — нічого не перезаписуємо
+        if (orderSnapshot.PaymentStatus == PaymentStatus.Paid && normalizedStatus != "reversed")
+        {
+            logger.LogInformation(
+                "Order {OrderPublicId} is already Paid (ExternalPaymentId={ExistingInvoice}). Skipping webhook {InvoiceId} ({Status}).",
+                orderSnapshot.PublicId, orderSnapshot.ExternalPaymentId, invoiceId, normalizedStatus);
+            return null;
+        }
+
+        // 2. Захист від застарілих інвойсів: якщо клієнт створив новий інвойс, а старий протух ("expired"/"failure"), ігноруємо старий
+        if (!string.IsNullOrWhiteSpace(orderSnapshot.ExternalPaymentId)
+            && !string.Equals(orderSnapshot.ExternalPaymentId, invoiceId, StringComparison.Ordinal)
+            && normalizedStatus is not ("success" or "reversed"))
+        {
+            logger.LogInformation(
+                "Ignoring stale Monobank webhook {InvoiceId} ({Status}) for order {OrderPublicId} (active invoice is {ActiveInvoice}).",
+                invoiceId, normalizedStatus, orderSnapshot.PublicId, orderSnapshot.ExternalPaymentId);
+            return null;
+        }
+
+        var amountUah = (payload.FinalAmount ?? payload.Amount) / 100m;
+        var auditComment = string.Format(
+            CultureInfo.InvariantCulture,
+            "[Monobank] Invoice={0}, Status={1}, Amount={2:F2} UAH{3}",
+            invoiceId,
+            normalizedStatus,
+            amountUah,
+            string.IsNullOrWhiteSpace(payload.FailureReason) ? "" : $", Reason={payload.FailureReason.Trim()}");
+
         switch (normalizedStatus)
         {
             case "success":
-                logger.LogInformation("Processing successful payment for order {Reference}.", payload.Reference);
+            {
+                var expectedKopecks = checked((long)Math.Round(orderSnapshot.TotalPrice * 100m, MidpointRounding.AwayFromZero));
+                var paidKopecks = payload.FinalAmount ?? payload.Amount;
+
+                // Сувора перевірка валюти (980 = UAH) та суми до копійки проти підміни ціни
+                if (payload.Ccy != 980 || payload.Amount < expectedKopecks || paidKopecks < expectedKopecks)
+                {
+                    logger.LogError(
+                        "SECURITY ALERT: Monobank amount/currency mismatch for order {OrderPublicId} (invoice {InvoiceId})! Expected {Expected} kop (ccy=980), got amount={Amount}, finalAmount={FinalAmount}, ccy={Ccy}. Order NOT marked Paid.",
+                        orderSnapshot.PublicId, invoiceId, expectedKopecks, payload.Amount, payload.FinalAmount, payload.Ccy);
+
+                    await AppendOrderPaymentAuditUnderLockAsync(
+                        orderSnapshot.Id,
+                        invoiceId,
+                        newStatus: null,
+                        $"[Monobank SECURITY ALERT] Mismatch on Invoice={invoiceId}: expected {expectedKopecks} kop (UAH), got {paidKopecks} kop (ccy={payload.Ccy})",
+                        cancellationToken);
+                    return null;
+                }
+
+                logger.LogInformation("Confirming verified Monobank payment for order {OrderPublicId} ({Amount} kop).",
+                    orderSnapshot.PublicId, paidKopecks);
+
                 var webhookRequest = new PaymentWebhookRequest
                 {
-                    OrderPublicId = payload.Reference,
-                    ExternalPaymentId = payload.InvoiceId,
+                    OrderId = orderSnapshot.Id,
+                    ExternalPaymentId = invoiceId,
                     PaymentProvider = "Monobank",
-                    PaymentStatus = PaymentStatus.Paid
+                    PaymentStatus = PaymentStatus.Paid,
+                    Comment = auditComment
                 };
-                return await orderService.ProcessPaymentWebhookAsync(webhookRequest, cancellationToken);
+
+                var confirmation = await orderService.ProcessPaymentWebhookAsync(webhookRequest, cancellationToken);
+                await NotifyAdminsOrderPaidAsync(orderSnapshot.OrderNumber, orderSnapshot.PublicId, amountUah, invoiceId);
+                return confirmation;
+            }
+
+            case "reversed":
+            {
+                logger.LogInformation("Processing refund/reversal for order {OrderPublicId}.", orderSnapshot.PublicId);
+                var refundRequest = new PaymentWebhookRequest
+                {
+                    OrderId = orderSnapshot.Id,
+                    ExternalPaymentId = invoiceId,
+                    PaymentProvider = "Monobank",
+                    PaymentStatus = PaymentStatus.Refunded,
+                    Comment = auditComment
+                };
+                return await orderService.ProcessPaymentWebhookAsync(refundRequest, cancellationToken);
+            }
 
             case "failure":
             case "expired":
-                logger.LogWarning("Monobank payment failed/expired for order {Reference}: {Reason}",
-                    payload.Reference, payload.FailureReason ?? payload.Status);
-                if (order is not null && order.PaymentStatus != PaymentStatus.Paid)
-                {
-                    order.PaymentStatus = PaymentStatus.Failed;
-                    order.UpdatedAt = now;
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                }
-                break;
+            {
+                logger.LogWarning("Monobank payment {Status} for order {OrderPublicId}: {Reason}",
+                    normalizedStatus, orderSnapshot.PublicId, payload.FailureReason ?? normalizedStatus);
 
-            case "reversed":
-                logger.LogInformation("Processing refund/reversal for order {Reference}.", payload.Reference);
-                var refundRequest = new PaymentWebhookRequest
-                {
-                    OrderPublicId = payload.Reference,
-                    ExternalPaymentId = payload.InvoiceId,
-                    PaymentProvider = "Monobank",
-                    PaymentStatus = PaymentStatus.Refunded
-                };
-                return await orderService.ProcessPaymentWebhookAsync(refundRequest, cancellationToken);
+                await AppendOrderPaymentAuditUnderLockAsync(
+                    orderSnapshot.Id,
+                    invoiceId,
+                    PaymentStatus.Failed,
+                    auditComment,
+                    cancellationToken);
+                break;
+            }
 
             case "processing":
             case "hold":
             case "created":
-                logger.LogInformation("Monobank payment for order {Reference} is currently in state: {Status}",
-                    payload.Reference, normalizedStatus);
-                if (order is not null && order.PaymentStatus != PaymentStatus.Paid)
-                {
-                    order.PaymentStatus = PaymentStatus.Pending;
-                    order.UpdatedAt = now;
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                }
+            {
+                logger.LogInformation("Monobank payment for order {OrderPublicId} is in intermediate state: {Status}",
+                    orderSnapshot.PublicId, normalizedStatus);
+
+                await AppendOrderPaymentAuditUnderLockAsync(
+                    orderSnapshot.Id,
+                    invoiceId,
+                    PaymentStatus.Pending,
+                    auditComment,
+                    cancellationToken);
                 break;
+            }
 
             default:
-                logger.LogWarning("Unrecognized Monobank status '{Status}' for order {Reference}.", payload.Status, payload.Reference);
+                logger.LogWarning("Unrecognized Monobank status '{Status}' for order {OrderPublicId}.",
+                    payload.Status, orderSnapshot.PublicId);
                 break;
         }
 
@@ -487,16 +682,23 @@ public sealed class MonobankService(
 
     public async Task<MonobankInvoiceStatusResponse> GetInvoiceStatusAsync(
         string invoiceId,
+        bool requireOrderMatch = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(invoiceId);
+        var cleanId = invoiceId.Trim();
+
+        if (requireOrderMatch)
+        {
+            await EnsureInvoiceBelongsToOrderAsync(cleanId, cancellationToken);
+        }
 
         var token = GetToken();
-        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/status?invoiceId={Uri.EscapeDataString(invoiceId)}";
+        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/status?invoiceId={Uri.EscapeDataString(cleanId)}";
         using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
         requestMessage.Headers.Add("X-Token", token);
 
-        logger.LogInformation("Checking Monobank status for invoice {InvoiceId}", invoiceId);
+        logger.LogInformation("Checking Monobank status for invoice {InvoiceId}", cleanId);
 
         var response = await httpClient.SendAsync(requestMessage, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -504,13 +706,174 @@ public sealed class MonobankService(
         if (!response.IsSuccessStatusCode)
         {
             logger.LogError("Monobank status check failed for invoice {InvoiceId}. Status: {StatusCode}, Body: {Body}",
-                invoiceId, response.StatusCode, responseContent);
+                cleanId, response.StatusCode, responseContent);
             throw new HttpRequestException($"Помилка перевірки статусу в Monobank: {responseContent}");
         }
 
         return JsonSerializer.Deserialize<MonobankInvoiceStatusResponse>(responseContent)
             ?? throw new InvalidOperationException("Отримано пусту відповідь від Monobank API.");
     }
+
+    private async Task EnsureInvoiceBelongsToOrderAsync(string invoiceId, CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.Orders
+            .AsNoTracking()
+            .AnyAsync(o => o.ExternalPaymentId == invoiceId, cancellationToken);
+
+        if (!exists)
+        {
+            throw new KeyNotFoundException($"Платіж '{invoiceId}' не знайдено.");
+        }
+    }
+
+    private async Task AppendOrderPaymentAuditUnderLockAsync(
+        Guid orderId,
+        string invoiceId,
+        PaymentStatus? newStatus,
+        string auditComment,
+        CancellationToken cancellationToken)
+    {
+        var isRelational = dbContext.Database.IsRelational();
+        await using var transaction = isRelational
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        var order = isRelational
+            ? await dbContext.Orders
+                .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {orderId} FOR UPDATE")
+                .FirstOrDefaultAsync(cancellationToken)
+            : await dbContext.Orders
+                .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+
+        if (order is null || order.PaymentStatus == PaymentStatus.Paid)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        order.PaymentProvider = "Monobank";
+        if (string.IsNullOrWhiteSpace(order.ExternalPaymentId) || order.ExternalPaymentId == invoiceId)
+        {
+            order.ExternalPaymentId = invoiceId;
+            if (newStatus.HasValue)
+            {
+                order.PaymentStatus = newStatus.Value;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(order.AdminComment))
+        {
+            order.AdminComment = auditComment;
+        }
+        else if (!order.AdminComment.Contains(auditComment, StringComparison.Ordinal))
+        {
+            order.AdminComment = $"{order.AdminComment}\n{auditComment}";
+        }
+
+        order.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+    }
+
+    private async Task NotifyAdminsOrderPaidAsync(int orderNumber, string publicId, decimal amountUah, string invoiceId)
+    {
+        if (telegramBotClient is null)
+            return;
+
+        try
+        {
+            var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+            if (adminIds.Count == 0)
+                return;
+
+            var text = string.Format(
+                CultureInfo.InvariantCulture,
+                "✅ <b>Замовлення #{0} оплачено онлайн (Monobank)!</b>\nСума: <b>{1:0.00} грн</b>\nКод: <code>{2}</code>\nІнвойс: <code>{3}</code>",
+                orderNumber,
+                amountUah,
+                WebUtility.HtmlEncode(publicId),
+                WebUtility.HtmlEncode(invoiceId));
+
+            foreach (var adminId in adminIds)
+            {
+                await telegramBotClient.SendMessageAsync(adminId, text, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Не вдалося надіслати Telegram-сповіщення про оплату замовлення #{OrderNumber}.", orderNumber);
+        }
+    }
+
+    private static (string NormType, string NormMode, long Diff) CalculateDiscountAdjustment(
+        long baseAmountKopecks,
+        MonobankDiscountDto discount)
+    {
+        var normType = discount.Type?.Trim().ToLowerInvariant() ?? "";
+        if (normType is not ("discount" or "extra"))
+        {
+            throw new ArgumentException($"Непідтримуваний тип знижки/надбавки: '{discount.Type}'. Очікується 'discount' або 'extra'.");
+        }
+
+        var normMode = discount.Mode?.Trim().ToLowerInvariant() ?? "";
+        if (normMode is not ("percent" or "value"))
+        {
+            throw new ArgumentException($"Непідтримуваний режим знижки: '{discount.Mode}'. Очікується 'percent' або 'value'.");
+        }
+
+        if (discount.Value <= 0m)
+        {
+            throw new ArgumentException("Значення знижки або надбавки повинно бути більшим за 0.");
+        }
+
+        if (normMode == "percent" && discount.Value > 100m)
+        {
+            throw new ArgumentException("Відсоткова знижка не може перевищувати 100%.");
+        }
+
+        var diff = normMode == "percent"
+            ? checked((long)Math.Round(baseAmountKopecks * (discount.Value / 100m), MidpointRounding.AwayFromZero))
+            : checked((long)Math.Round(discount.Value, MidpointRounding.AwayFromZero));
+
+        return (normType, normMode, diff);
+    }
+
+    private string BuildOrderRedirectUrl(string orderPublicId)
+    {
+        var baseUrl = ResolveConfiguredRedirectUrl();
+        var separator = baseUrl.Contains('?') ? '&' : '?';
+        return $"{baseUrl}{separator}publicId={Uri.EscapeDataString(orderPublicId)}";
+    }
+
+    private string ResolveConfiguredRedirectUrl()
+    {
+        var configured = (configuration["Monobank:RedirectUrl"] ?? configuration["MONOBANK_REDIRECT_URL"])?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured) && !ContainsPlaceholderDomain(configured))
+        {
+            return configured;
+        }
+
+        var publicSiteUrl = (configuration["Referral:PublicSiteUrl"] ?? DefaultPublicSiteUrl).Trim().TrimEnd('/');
+        return $"{publicSiteUrl}/payment-result";
+    }
+
+    private string? ResolveConfiguredWebhookUrl()
+    {
+        var configured = (configuration["Monobank:WebhookUrl"] ?? configuration["MONOBANK_WEBHOOK_URL"])?.Trim();
+        if (string.IsNullOrWhiteSpace(configured) || ContainsPlaceholderDomain(configured))
+        {
+            return null;
+        }
+
+        return configured;
+    }
+
+    private static bool ContainsPlaceholderDomain(string url) =>
+        url.Contains("mysite.com", StringComparison.OrdinalIgnoreCase);
 
     private async Task<string> GetPublicKeyAsync(bool forceRefresh, CancellationToken cancellationToken)
     {
@@ -527,6 +890,11 @@ public sealed class MonobankService(
                 return _cachedPublicKey;
             }
 
+            if (forceRefresh && DateTime.UtcNow - _lastPubKeyFetchUtc < PubKeyRefreshCooldown && !string.IsNullOrWhiteSpace(_cachedPublicKey))
+            {
+                return _cachedPublicKey;
+            }
+
             var token = GetToken();
             var requestUri = $"{GetBaseUrl()}/api/merchant/pubkey";
             using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -536,6 +904,7 @@ public sealed class MonobankService(
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _lastPubKeyFetchUtc = DateTime.UtcNow;
 
             if (!response.IsSuccessStatusCode)
             {

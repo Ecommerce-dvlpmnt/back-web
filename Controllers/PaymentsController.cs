@@ -3,7 +3,10 @@ using System.Text;
 using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Orders;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Middleware;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EcommerceBackend.Controllers;
 
@@ -16,29 +19,49 @@ public sealed class PaymentsController(
     IConfiguration configuration,
     ILogger<PaymentsController> logger) : ControllerBase
 {
-    /// <summary>Створення інвойсу в Monobank для існуючого замовлення з деталізованим кошиком для пРРО.</summary>
+    /// <summary>
+    /// Створення інвойсу в Monobank для існуючого замовлення суворо за цінами та знижками з БД.
+    /// Не приймає з клієнта суму, позиції чи URL-адреси.
+    /// </summary>
     [HttpPost("monobank/create/{orderPublicId}")]
+    [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<MonobankInvoiceResponse>> CreateMonobankInvoice(
         string orderPublicId,
-        [FromBody] CreateMonobankPaymentRequest? request,
         CancellationToken cancellationToken)
     {
-        var invoice = await monobankService.CreateInvoiceForOrderAsync(
-            orderPublicId,
-            request?.RedirectUrl,
-            request?.WebhookUrl,
-            cancellationToken);
-
+        var invoice = await monobankService.CreateInvoiceForOrderAsync(orderPublicId, cancellationToken);
         return Ok(invoice);
     }
 
-    /// <summary>Створення платежу з переліком товарів, знижками/надбавками та фіскалізацією (пРРО).</summary>
+    /// <summary>
+    /// Безпечна перевірка статусу оплати замовлення за його публічним кодом (для сторінки /payment-result на фронтенді).
+    /// Лише читання з БД без розкриття персональних даних (PII) та без зміни статусу оплати.
+    /// </summary>
+    [HttpGet("monobank/order-status/{orderPublicId}")]
+    [EnableRateLimiting("order-limit")]
+    [ProducesResponseType(typeof(MonobankOrderPaymentStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<MonobankOrderPaymentStatusResponse>> GetOrderPaymentStatus(
+        string orderPublicId,
+        CancellationToken cancellationToken)
+    {
+        var status = await monobankService.GetOrderPaymentStatusAsync(orderPublicId, cancellationToken);
+        return status is null ? NotFound() : Ok(status);
+    }
+
+    /// <summary>Адмін-ендпоінт: створення тестового/ручного платежу з фіскальним кошиком (пРРО).</summary>
     [HttpPost("monobank/create-fiscal-invoice")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<MonobankInvoiceResponse>> CreateFiscalInvoice(
         [FromBody] CreateFiscalInvoiceRequest request,
         CancellationToken cancellationToken)
@@ -47,10 +70,13 @@ public sealed class PaymentsController(
         return Ok(invoice);
     }
 
-    /// <summary>Створення тестового або довільного інвойсу в Monobank (за замовчуванням: 100 грн, "Тестова оплата").</summary>
+    /// <summary>Адмін-ендпоінт: створення тестового інвойсу в Monobank (за замовчуванням 100 грн).</summary>
     [HttpPost("monobank/create-test-invoice")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<MonobankInvoiceResponse>> CreateTestInvoice(
         [FromBody] CreateCustomMonobankInvoiceRequest? request,
         CancellationToken cancellationToken)
@@ -60,60 +86,72 @@ public sealed class PaymentsController(
         return Ok(invoice);
     }
 
-    /// <summary>Отримання сформованих фіскальних чеків (дані та посилання на tax.gov.ua) за ID інвойсу.</summary>
+    /// <summary>Отримання сформованих фіскальних чеків (дані та посилання на tax.gov.ua) за ID інвойсу замовлення.</summary>
     [HttpGet("monobank/fiscal-checks/{invoiceId}")]
+    [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(MonobankFiscalChecksResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<MonobankFiscalChecksResponse>> GetFiscalChecks(
         string invoiceId,
         CancellationToken cancellationToken)
     {
-        var checks = await monobankService.GetFiscalChecksAsync(invoiceId, cancellationToken);
+        var isAdmin = User?.IsInRole("Admin") == true;
+        var checks = await monobankService.GetFiscalChecksAsync(invoiceId, requireOrderMatch: !isAdmin, cancellationToken);
         return Ok(checks);
     }
 
     /// <summary>Завантаження друкованого PDF-файлу фіскального чека Monobank (пРРО).</summary>
     [HttpGet("monobank/fiscal-checks/{invoiceId}/pdf")]
+    [EnableRateLimiting("order-limit")]
     [Produces("application/pdf")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> DownloadFiscalCheckPdf(
         string invoiceId,
         CancellationToken cancellationToken)
     {
-        var pdfBytes = await monobankService.GetFiscalCheckPdfBytesAsync(invoiceId, cancellationToken);
+        var isAdmin = User?.IsInRole("Admin") == true;
+        var pdfBytes = await monobankService.GetFiscalCheckPdfBytesAsync(invoiceId, requireOrderMatch: !isAdmin, cancellationToken);
         if (pdfBytes == null || pdfBytes.Length == 0)
         {
             return NotFound(new { error = "PDF фіскального чека ще не сформовано або інвойс не знайдено." });
         }
 
-        return File(pdfBytes, "application/pdf", $"fiscal_check_{invoiceId}.pdf");
+        var safeInvoiceId = new string(invoiceId.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').Take(64).ToArray());
+        if (string.IsNullOrEmpty(safeInvoiceId))
+        {
+            safeInvoiceId = "receipt";
+        }
+
+        return File(pdfBytes, "application/pdf", $"fiscal_check_{safeInvoiceId}.pdf");
     }
 
     /// <summary>
-    /// Офіційний вебхук Monobank з перевіркою ECDSA підпису в заголовку X-Sign.
+    /// Офіційний вебхук Monobank з перевіркою ECDSA підпису в заголовку X-Sign по сирим байтам тіла.
     /// Доступний за обома маршрутами: /api/payments/monobank/webhook та /api/payment/webhook.
     /// </summary>
     [HttpPost("monobank/webhook")]
     [HttpPost("/api/payment/webhook")]
+    [RequestSizeLimit(65_536)]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> HandleMonobankWebhook(CancellationToken cancellationToken)
     {
-        // 1. Зчитуємо сире тіло запиту для перевірки підпису
-        Request.EnableBuffering();
-        using var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync(cancellationToken);
-        Request.Body.Position = 0;
+        // 1. Зчитуємо точні сирі байти тіла запиту напряму з потоку без перекодування символів
+        await using var ms = new MemoryStream();
+        await Request.Body.CopyToAsync(ms, cancellationToken);
+        var rawBytes = ms.ToArray();
 
-        var rawBytes = Encoding.UTF8.GetBytes(rawBody);
         var xSign = Request.Headers["X-Sign"].ToString();
 
         logger.LogInformation("Отримано вебхук Monobank (довжина тіла: {Length} байт, X-Sign: {XSign})",
             rawBytes.Length, string.IsNullOrWhiteSpace(xSign) ? "<MISSING>" : xSign[..Math.Min(16, xSign.Length)] + "...");
 
-        // 2. Верифікація підпису ECDSA
+        // 2. Верифікація ECDSA підпису (SHA-256)
         var isSignatureValid = await monobankService.VerifyWebhookSignatureAsync(rawBytes, xSign, cancellationToken);
         if (!isSignatureValid)
         {
@@ -121,25 +159,25 @@ public sealed class PaymentsController(
             return Unauthorized("Недійсний підпис X-Sign від Monobank.");
         }
 
-        // 3. Десеріалізація та обробка
+        // 3. Десеріалізація перевірених байтів
         MonobankWebhookPayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<MonobankWebhookPayload>(rawBody, new JsonSerializerOptions
+            payload = JsonSerializer.Deserialize<MonobankWebhookPayload>(rawBytes, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Помилка десеріалізації тіла вебхука Monobank: {RawBody}", rawBody);
+            logger.LogError(ex, "Помилка десеріалізації тіла вебхука Monobank.");
             return BadRequest("Некоректний формат JSON.");
         }
 
-        if (payload is null)
+        if (payload is null || string.IsNullOrWhiteSpace(payload.InvoiceId) || string.IsNullOrWhiteSpace(payload.Status))
         {
-            logger.LogWarning("Пусте тіло вебхука Monobank.");
-            return BadRequest("Пусте тіло вебхука.");
+            logger.LogWarning("Неповне або пусте тіло вебхука Monobank.");
+            return BadRequest("Неповне тіло вебхука.");
         }
 
         try
@@ -147,32 +185,38 @@ public sealed class PaymentsController(
             await monobankService.ProcessWebhookAsync(payload, cancellationToken);
             return Ok();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or ArgumentException)
         {
-            logger.LogError(ex, "Помилка при обробці вебхука Monobank для інвойсу {InvoiceId}", payload.InvoiceId);
+            // Детермінована бізнес-відмова (скасоване замовлення тощо) — повертаємо 200, щоб Monobank не спамив ретраями.
+            // Тимчасові помилки БД/мережі сюди не потрапляють -> прокидаються як 500, щоб Monobank повторив доставку!
+            logger.LogWarning(ex, "Бізнес-відмова при обробці вебхука Monobank для інвойсу {InvoiceId}", payload.InvoiceId);
             return Ok();
         }
     }
 
-    /// <summary>Перевірка живого статусу інвойсу за його ID напряму з Monobank API.</summary>
+    /// <summary>Перевірка живого статусу інвойсу за його ID (для існуючих замовлень або адміністраторів).</summary>
     [HttpGet("monobank/status/{invoiceId}")]
+    [EnableRateLimiting("order-limit")]
     [ProducesResponseType(typeof(MonobankInvoiceStatusResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<MonobankInvoiceStatusResponse>> GetMonobankStatus(
         string invoiceId,
         CancellationToken cancellationToken)
     {
-        var status = await monobankService.GetInvoiceStatusAsync(invoiceId, cancellationToken);
+        var isAdmin = User?.IsInRole("Admin") == true;
+        var status = await monobankService.GetInvoiceStatusAsync(invoiceId, requireOrderMatch: !isAdmin, cancellationToken);
         return Ok(status);
     }
 
     /// <summary>Стандартний захищений вебхук для внутрішніх/інших платіжних провайдерів.</summary>
     [HttpPost("webhook")]
     [ProducesResponseType(typeof(OrderPaymentConfirmationResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OrderPaymentConfirmationResponse>> HandleWebhook(
         [FromBody] PaymentWebhookRequest request,
         [FromHeader(Name = "X-Webhook-Secret")] string? webhookSecret,

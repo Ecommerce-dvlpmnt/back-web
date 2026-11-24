@@ -1,33 +1,28 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using EcommerceBackend.Domain.Enums;
 
 namespace EcommerceBackend.Application.DTOs.Orders;
 
-/// <summary>Request payload for initiating a Monobank acquiring payment for an order.</summary>
-public sealed record CreateMonobankPaymentRequest
-{
-    /// <summary>Optional custom redirect URL after payment. If not set, defaults to server configuration.</summary>
-    public string? RedirectUrl { get; init; }
-
-    /// <summary>Optional custom webhook URL. If not set, defaults to server configuration.</summary>
-    public string? WebhookUrl { get; init; }
-}
-
-/// <summary>Request payload for creating a custom or standalone test invoice.</summary>
+/// <summary>Request payload for creating a custom or standalone test invoice (Admin only).</summary>
 public sealed record CreateCustomMonobankInvoiceRequest
 {
     /// <summary>Amount in kopecks (e.g. 10000 = 100.00 UAH). Default: 10000 (100 грн).</summary>
+    [Range(100, 100_000_000)]
     public long AmountInKopecks { get; init; } = 10000;
 
     /// <summary>Payment description / destination. Default: "Тестова оплата".</summary>
+    [Required, StringLength(255, MinimumLength = 1)]
     public string Destination { get; init; } = "Тестова оплата";
 
-    /// <summary>Redirect URL after payment. Default: https://mysite.com/payment-result.</summary>
-    public string RedirectUrl { get; init; } = "https://mysite.com/payment-result";
+    /// <summary>Optional redirect URL override for admin tests.</summary>
+    public string? RedirectUrl { get; init; }
 
-    /// <summary>Webhook URL for receiving callbacks. Default: https://mysite.com/api/payment/webhook.</summary>
-    public string WebhookUrl { get; init; } = "https://mysite.com/api/payment/webhook";
+    /// <summary>Optional webhook URL override for admin tests.</summary>
+    public string? WebhookUrl { get; init; }
 
-    /// <summary>Optional reference ID (e.g. order number).</summary>
+    /// <summary>Optional test reference ID (cannot collide with real order PublicId).</summary>
+    [StringLength(64)]
     public string? Reference { get; init; }
 }
 
@@ -40,6 +35,18 @@ public sealed record MonobankInvoiceResponse
     [JsonPropertyName("pageUrl")]
     public required string PageUrl { get; init; }
 }
+
+/// <summary>Safe order payment status summary for the frontend /payment-result page.</summary>
+public sealed record MonobankOrderPaymentStatusResponse(
+    string OrderPublicId,
+    int OrderNumber,
+    decimal TotalPrice,
+    PaymentStatus PaymentStatus,
+    OrderStatus OrderStatus,
+    string? InvoiceId,
+    bool IsPaid,
+    bool CanRetryPayment,
+    bool ReceiptAvailable);
 
 /// <summary>Payload received from Monobank webhook upon payment completion or status change.</summary>
 public sealed record MonobankWebhookPayload
