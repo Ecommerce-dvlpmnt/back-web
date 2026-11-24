@@ -22,18 +22,37 @@ public sealed class TelegramBotCommandHandlerTests
         var telegramClient = new FakeTelegramBotClient();
         var handler = CreateHandler(referralService, telegramClient);
 
+        // 1. На /start бот питає підтвердження і НЕ реєструє автоматично
         await handler.HandleUpdateAsync(CreateUpdate(1001, "/start"));
+
+        Assert.False(referralService.RegisterCalled);
+        Assert.Single(telegramClient.Messages);
+        Assert.Contains("Бажаєте стати партнером", telegramClient.Messages[0].Text);
+        Assert.Contains("3%", telegramClient.Messages[0].Text);
+
+        // 2. Користувач тисне "✅ Так, стати партнером"
+        var confirmCallback = new TelegramUpdate(
+            2,
+            null,
+            new TelegramCallbackQuery(
+                "cb_reg_1",
+                new TelegramUser(1001, false, "Sasha", null, "sasha", "uk"),
+                new TelegramMessage(10, null, new TelegramChat(1001, "private"), 0, "opt-in"),
+                "partner_reg_yes"));
+
+        await handler.HandleUpdateAsync(confirmCallback);
 
         Assert.True(referralService.RegisterCalled);
         Assert.Equal(1001, referralService.LastRegisterRequest?.TelegramUserId);
-        Assert.Single(telegramClient.Messages);
-        Assert.Contains("Вітаю", telegramClient.Messages[0].Text);
-        Assert.Contains("https://www.jingledecor.com.ua/?ref=SASHA5", telegramClient.Messages[0].Text);
-        Assert.DoesNotContain("/help", telegramClient.Messages[0].Text);
-        Assert.True(telegramClient.ReplyMarkups[0]?.IsPersistent);
+        Assert.Equal(3.0m, referralService.LastRegisterRequest?.CommissionPercent);
+        Assert.Contains("Вітаю", telegramClient.Messages[^1].Text);
+        Assert.Contains("https://www.jingledecor.com.ua/?ref=SASHA5", telegramClient.Messages[^1].Text);
+        Assert.Contains("https://t.me/ref_ecommerce_bot?start=inv_SASHA5", telegramClient.Messages[^1].Text);
+        Assert.DoesNotContain("/help", telegramClient.Messages[^1].Text);
+        Assert.True(telegramClient.ReplyMarkups[^1]?.IsPersistent);
         Assert.Contains(
             "Статистика",
-            telegramClient.ReplyMarkups[0]!.Keyboard.SelectMany(row => row));
+            telegramClient.ReplyMarkups[^1]!.Keyboard.SelectMany(row => row));
     }
 
     [Fact]
@@ -93,14 +112,33 @@ public sealed class TelegramBotCommandHandlerTests
 
         await handler.HandleUpdateAsync(CreateUpdate(1004, "/withdraw"));
         await handler.HandleUpdateAsync(CreateUpdate(1004, "500"));
-        await handler.HandleUpdateAsync(CreateUpdate(1004, "4149 4999 1234 5678"));
+        await handler.HandleUpdateAsync(CreateUpdate(1004, "4149 4999 1234 5673"));
 
         Assert.NotNull(referralService.LastPayoutRequest);
         Assert.Equal(500m, referralService.LastPayoutRequest!.Amount);
-        Assert.Equal("4149499912345678", referralService.LastPayoutRequest.CardNumber);
+        Assert.Equal("4149499912345673", referralService.LastPayoutRequest.CardNumber);
         Assert.Equal(3, telegramClient.Messages.Count);
         Assert.Contains("Заявку", telegramClient.Messages[^1].Text);
         Assert.False(TelegramBotCommandHandler.HasActiveWithdrawalState(1004));
+    }
+
+    [Fact]
+    public async Task WithdrawFlow_InvalidLuhnCard_RejectsCardAndKeepsState()
+    {
+        var referralService = new FakeReferralService
+        {
+            Profile = CreateProfile(1014, "SASHA5", availableBalance: 500m)
+        };
+        var telegramClient = new FakeTelegramBotClient();
+        var handler = CreateHandler(referralService, telegramClient);
+
+        await handler.HandleUpdateAsync(CreateUpdate(1014, "/withdraw"));
+        await handler.HandleUpdateAsync(CreateUpdate(1014, "500"));
+        await handler.HandleUpdateAsync(CreateUpdate(1014, "1111 2222 3333 4445"));
+
+        Assert.Null(referralService.LastPayoutRequest);
+        Assert.Contains("Некоректний номер картки", telegramClient.Messages[^1].Text);
+        Assert.True(TelegramBotCommandHandler.HasActiveWithdrawalState(1014));
     }
 
     [Fact]
@@ -108,7 +146,7 @@ public sealed class TelegramBotCommandHandlerTests
     {
         var referralService = new FakeReferralService
         {
-            Profile = CreateProfile(1005, "SASHA5", availableBalance: 600m, cardNumber: "4441111122221234")
+            Profile = CreateProfile(1005, "SASHA5", availableBalance: 600m, cardNumber: "4441111122221231")
         };
         var telegramClient = new FakeTelegramBotClient();
         var handler = CreateHandler(referralService, telegramClient);
@@ -116,14 +154,14 @@ public sealed class TelegramBotCommandHandlerTests
         await handler.HandleUpdateAsync(CreateUpdate(1005, "/withdraw"));
         await handler.HandleUpdateAsync(CreateUpdate(1005, "500"));
 
-        Assert.Contains("<code>4441 •••• •••• 1234</code>", telegramClient.Messages[^1].Text);
+        Assert.Contains("<code>4441 •••• •••• 1231</code>", telegramClient.Messages[^1].Text);
         Assert.Equal(TelegramBotMenu.SavedCardConfirmationReplyMarkup, telegramClient.ReplyMarkups[^1]);
 
         await handler.HandleUpdateAsync(CreateUpdate(1005, TelegramBotMenu.ConfirmSavedCardButton));
 
         Assert.NotNull(referralService.LastPayoutRequest);
         Assert.Equal(500m, referralService.LastPayoutRequest!.Amount);
-        Assert.Equal("4441111122221234", referralService.LastPayoutRequest.CardNumber);
+        Assert.Equal("4441111122221231", referralService.LastPayoutRequest.CardNumber);
         Assert.Contains("Заявку на виведення 500.00 грн створено", telegramClient.Messages[^1].Text);
         Assert.False(TelegramBotCommandHandler.HasActiveWithdrawalState(1005));
     }
@@ -133,7 +171,7 @@ public sealed class TelegramBotCommandHandlerTests
     {
         var referralService = new FakeReferralService
         {
-            Profile = CreateProfile(1006, "SASHA5", availableBalance: 600m, cardNumber: "4441111122221234")
+            Profile = CreateProfile(1006, "SASHA5", availableBalance: 600m, cardNumber: "4441111122221231")
         };
         var telegramClient = new FakeTelegramBotClient();
         var handler = CreateHandler(referralService, telegramClient);
@@ -144,10 +182,10 @@ public sealed class TelegramBotCommandHandlerTests
 
         Assert.Contains("Введіть номер банківської картки (16 цифр)", telegramClient.Messages[^1].Text);
 
-        await handler.HandleUpdateAsync(CreateUpdate(1006, "5375 4141 0000 9999"));
+        await handler.HandleUpdateAsync(CreateUpdate(1006, "5375 4141 0000 9991"));
 
         Assert.NotNull(referralService.LastPayoutRequest);
-        Assert.Equal("5375414100009999", referralService.LastPayoutRequest!.CardNumber);
+        Assert.Equal("5375414100009991", referralService.LastPayoutRequest!.CardNumber);
         Assert.False(TelegramBotCommandHandler.HasActiveWithdrawalState(1006));
     }
 
@@ -180,7 +218,7 @@ public sealed class TelegramBotCommandHandlerTests
     {
         var referralService = new FakeReferralService
         {
-            RegisteredProfile = new BotPartnerProfileResponse(
+            Profile = new BotPartnerProfileResponse(
                 Guid.NewGuid(),
                 1008,
                 "Sasha <Admin> & Co",
@@ -312,7 +350,7 @@ public sealed class TelegramBotCommandHandlerTests
         Assert.Contains("<code>MAX5</code>", text);
         Assert.Contains("Запрошено замовлень: <b>12</b> (доставлено: <b>9</b>)", text);
         Assert.Contains("12000.00 грн", text);
-        Assert.Contains("<code>4149499912345678</code>", text);
+        Assert.Contains("<code>4149 •••• •••• 5678</code>", text);
     }
 
     [Fact]

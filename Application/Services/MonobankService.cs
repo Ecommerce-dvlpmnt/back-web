@@ -786,7 +786,7 @@ public sealed class MonobankService(
 
         try
         {
-            var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+            var adminIds = TelegramBotMenu.GetAdminOrderNotificationChatIds(configuration);
             if (adminIds.Count == 0)
                 return;
 

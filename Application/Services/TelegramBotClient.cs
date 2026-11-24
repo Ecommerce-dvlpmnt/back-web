@@ -381,24 +381,36 @@ public sealed class TelegramBotClient(
     {
         ArgumentNullException.ThrowIfNull(order);
 
-        var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+        var adminIds = TelegramBotMenu.GetAdminOrderNotificationChatIds(configuration);
         if (adminIds.Count == 0)
         {
             return false;
         }
 
         var text = FormatAdminOrderMessage(order, isNewOrderNotification: true);
+        var inlineMarkup = CreateNewOrderAdminInlineMarkup(order.OrderNumber);
         var anySent = false;
 
         foreach (var adminId in adminIds)
         {
-            if (await SendMessageCoreAsync(adminId, Guid.Empty, text, null, cancellationToken))
+            if (await SendMessageCoreAsync(adminId, Guid.Empty, text, inlineMarkup, cancellationToken))
             {
                 anySent = true;
             }
         }
 
         return anySent;
+    }
+
+    public static TelegramInlineKeyboardMarkup CreateNewOrderAdminInlineMarkup(int orderNumber)
+    {
+        return new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("✅ Підтвердити", $"ord_confirm:{orderNumber}"),
+                new TelegramInlineKeyboardButton("❌ Скасувати", $"ord_reject:{orderNumber}")
+            ]
+        ]);
     }
 
     public async Task<bool> SendAdminPayoutRequestNotificationAsync(
@@ -538,10 +550,11 @@ public sealed class TelegramBotClient(
         object? replyMarkup,
         CancellationToken cancellationToken)
     {
-        if (telegramUserId <= 0)
+        if (telegramUserId == 0)
         {
             logger.LogWarning(
-                "Неможливо надіслати сповіщення в Telegram для партнера {PartnerId}: некоректний TelegramUserId.",
+                "Неможливо надіслати сповіщення в Telegram для чату {ChatId} (партнер {PartnerId}): некоректний ID.",
+                telegramUserId,
                 partnerId);
             return false;
         }

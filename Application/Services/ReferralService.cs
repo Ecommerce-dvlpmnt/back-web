@@ -610,13 +610,17 @@ public sealed class ReferralService(
             }
         }
 
+        var commission = request.CommissionPercent is > 0m and <= 100m
+            ? Math.Round(request.CommissionPercent.Value, 2, MidpointRounding.AwayFromZero)
+            : 3.0m;
+
         var partner = new Partner
         {
             Id = Guid.NewGuid(),
             TelegramUserId = request.TelegramUserId,
             Name = name,
             ReferralCode = code,
-            CommissionPercent = 5.0m,
+            CommissionPercent = commission,
             TotalEarned = 0m,
             CreatedAt = DateTime.UtcNow
         };
@@ -756,6 +760,11 @@ public sealed class ReferralService(
         if (!string.IsNullOrWhiteSpace(request.CardNumber) && cleanCard.Length != 16)
         {
             throw new ArgumentException("Номер банківської картки повинен містити 16 цифр.", nameof(request));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CardNumber) && !IsValidCardLuhn(cleanCard))
+        {
+            throw new ArgumentException("Некоректний номер банківської картки (перевірте правильність цифр).", nameof(request));
         }
 
         var ownsTransaction = dbContext.Database.CurrentTransaction is null;
@@ -1235,6 +1244,40 @@ public sealed class ReferralService(
             promo.IsActive,
             promo.CreatedByTelegramUserId,
             promo.CreatedAt);
+
+    public static bool IsValidCardLuhn(string? digits)
+    {
+        if (string.IsNullOrWhiteSpace(digits) || digits.Length != 16)
+        {
+            return false;
+        }
+
+        var sum = 0;
+        var alternate = false;
+        for (var i = digits.Length - 1; i >= 0; i--)
+        {
+            var ch = digits[i];
+            if (!char.IsDigit(ch))
+            {
+                return false;
+            }
+
+            var n = ch - '0';
+            if (alternate)
+            {
+                n *= 2;
+                if (n > 9)
+                {
+                    n -= 9;
+                }
+            }
+
+            sum += n;
+            alternate = !alternate;
+        }
+
+        return sum > 0 && sum % 10 == 0;
+    }
 
     private static string MaskCardNumber(string card)
     {

@@ -90,6 +90,9 @@ public sealed record BotRegisterPartnerRequest
     [StringLength(32, MinimumLength = 2)]
     [RegularExpression(@"^[A-Za-z0-9_-]+$")]
     public string? ReferralCode { get; init; }
+
+    [Range(0.01, 100)]
+    public decimal? CommissionPercent { get; init; }
 }
 
 public sealed record BotPartnerProfileResponse(

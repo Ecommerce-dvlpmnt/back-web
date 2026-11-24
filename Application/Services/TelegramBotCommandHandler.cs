@@ -65,7 +65,7 @@ public sealed class TelegramBotCommandHandler(
 
         if (command is not null)
         {
-            await HandleCommandAsync(chat.Id, from, command, isAdmin, cancellationToken);
+            await HandleCommandAsync(chat.Id, from, command, text, isAdmin, cancellationToken);
             return;
         }
 
@@ -114,6 +114,7 @@ public sealed class TelegramBotCommandHandler(
         long chatId,
         TelegramUser user,
         string command,
+        string rawText,
         bool isAdmin,
         CancellationToken cancellationToken)
     {
@@ -170,7 +171,7 @@ public sealed class TelegramBotCommandHandler(
         switch (command)
         {
             case "/start":
-                await StartAsync(chatId, user, cancellationToken);
+                await StartAsync(chatId, user, rawText, cancellationToken);
                 break;
             case "/link":
                 await SendLinkAsync(chatId, user.Id, cancellationToken);
@@ -196,13 +197,52 @@ public sealed class TelegramBotCommandHandler(
         }
     }
 
-    private async Task StartAsync(long chatId, TelegramUser user, CancellationToken cancellationToken)
+    private async Task StartAsync(long chatId, TelegramUser user, string rawText, CancellationToken cancellationToken)
     {
-        var (profile, created) = await EnsurePartnerAsync(user, cancellationToken);
+        var existing = await referralService.GetBotPartnerProfileAsync(user.Id, cancellationToken);
+        if (existing is not null)
+        {
+            await SendPartnerWelcomeAsync(chatId, existing, created: false, cancellationToken);
+            return;
+        }
 
+        var inviteCode = ExtractStartPayload(rawText);
+        var inviter = inviteCode is not null
+            ? await referralService.FindPartnerByCodeAsync(inviteCode, cancellationToken)
+            : null;
+
+        var safeUserName = Html(BuildPartnerName(user));
+        var header = inviter is not null
+            ? $"👋 Вітаю, <b>{safeUserName}</b>!\nПартнер <b>{Html(inviter.Name)}</b> запрошує вас до партнерської програми <b>Jingle Decor</b>."
+            : $"👋 Вітаю, <b>{safeUserName}</b>, у партнерській програмі <b>Jingle Decor</b>!";
+
+        var promptText = $"""
+            {header}
+
+            Бажаєте стати партнером та отримувати <b>3%</b> від суми кожного доставленого замовлення за вашим особистим посиланням?
+            """;
+
+        var optInMarkup = new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("✅ Так, стати партнером", "partner_reg_yes"),
+                new TelegramInlineKeyboardButton("❌ Ні, дякую", "partner_reg_no")
+            ]
+        ]);
+
+        await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, promptText, optInMarkup, cancellationToken);
+    }
+
+    private async Task SendPartnerWelcomeAsync(
+        long chatId,
+        BotPartnerProfileResponse profile,
+        bool created,
+        CancellationToken cancellationToken)
+    {
         var safeName = Html(profile.Name);
         var safeCode = Html(profile.ReferralCode);
-        var safeLink = Html(BuildReferralLink(profile.ReferralCode));
+        var safeStoreLink = Html(BuildReferralLink(profile.ReferralCode));
+        var safeBotInviteLink = Html(BuildBotInviteLink(profile.ReferralCode));
 
         var greeting = created
             ? $"Вітаю, <b>{safeName}</b>! Ви зареєстровані як партнер Jingle Decor."
@@ -212,10 +252,13 @@ public sealed class TelegramBotCommandHandler(
             {greeting}
 
             Ваш реферальний код: <code>{safeCode}</code> (натисніть, щоб скопіювати)
-            Ваше посилання:
-            <code>{safeLink}</code>
+            🛍 Посилання на магазин для покупців:
+            <code>{safeStoreLink}</code>
 
-            Ви отримуєте <b>{Percent(profile.CommissionPercent)}%</b> від суми кожного замовлення за вашим посиланням.
+            Ви отримуєте <b>{Percent(profile.CommissionPercent)}%</b> від суми кожного доставленого замовлення за вашим посиланням.
+
+            🤝 Посилання на бота для друзів (вони отримуватимуть 3% зі своїх замовлень):
+            <code>{safeBotInviteLink}</code>
 
             Скористайтеся меню внизу, щоб керувати ботом.
             """;
@@ -234,10 +277,11 @@ public sealed class TelegramBotCommandHandler(
 
         var safeCode = Html(profile.ReferralCode);
         var safeLink = Html(BuildReferralLink(profile.ReferralCode));
+        var safeBotInviteLink = Html(BuildBotInviteLink(profile.ReferralCode));
 
         await SendAsync(
             chatId,
-            $"Ваш промокод: <code>{safeCode}</code> (натисніть, щоб скопіювати)\nВаше реферальне посилання:\n<code>{safeLink}</code>",
+            $"Ваш реферальний код: <code>{safeCode}</code> (ваш бонус: <b>{Percent(profile.CommissionPercent)}%</b>)\n\n🛍 Посилання на магазин (для покупців):\n<code>{safeLink}</code>\n\n🤝 Запросити друга стати партнером у боті (на 3%):\n<code>{safeBotInviteLink}</code>",
             cancellationToken);
     }
 
@@ -421,6 +465,13 @@ public sealed class TelegramBotCommandHandler(
             var typedCardDigits = new string(text.Where(char.IsDigit).ToArray());
             if (typedCardDigits.Length == 16)
             {
+                if (!ReferralService.IsValidCardLuhn(typedCardDigits))
+                {
+                    state.Touch();
+                    await SendAsync(chatId, "Некоректний номер картки (перевірте правильність уведених 16 цифр). Спробуйте ще раз або /cancel.", cancellationToken);
+                    return;
+                }
+
                 await ExecutePayoutAsync(chatId, user.Id, state.Amount.Value, typedCardDigits, cancellationToken);
                 return;
             }
@@ -436,10 +487,13 @@ public sealed class TelegramBotCommandHandler(
         }
 
         var cardNumber = new string(text.Where(char.IsDigit).ToArray());
-        if (cardNumber.Length != 16)
+        if (cardNumber.Length != 16 || !ReferralService.IsValidCardLuhn(cardNumber))
         {
             state.Touch();
-            await SendAsync(chatId, "Номер картки повинен містити рівно 16 цифр. Спробуйте ще раз або /cancel.", cancellationToken);
+            var errorText = cardNumber.Length != 16
+                ? "Номер картки повинен містити рівно 16 цифр. Спробуйте ще раз або /cancel."
+                : "Некоректний номер картки (перевірте правильність уведених 16 цифр). Спробуйте ще раз або /cancel.";
+            await SendAsync(chatId, errorText, cancellationToken);
             return;
         }
 
@@ -702,7 +756,7 @@ public sealed class TelegramBotCommandHandler(
         }
     }
 
-    private async Task SendAdminReferralsAsync(long chatId, CancellationToken cancellationToken)
+    private async Task SendAdminReferralsAsync(long chatId, CancellationToken cancellationToken, long? editMessageId = null)
     {
         var partners = await referralService.GetAllPartnersAsync(cancellationToken);
         if (partners.Count == 0)
@@ -712,10 +766,12 @@ public sealed class TelegramBotCommandHandler(
         }
 
         var builder = new StringBuilder($"🤝 <b>Реферали ({partners.Count}):</b>\n");
+        var rows = new List<IReadOnlyList<TelegramInlineKeyboardButton>>();
+
         foreach (var partner in partners)
         {
             var cardInfo = !string.IsNullOrWhiteSpace(partner.CardNumber)
-                ? $"<code>{Html(partner.CardNumber)}</code>"
+                ? $"<code>{Html(MaskCardNumber(partner.CardNumber))}</code>"
                 : "<i>не вказана</i>";
 
             builder.AppendLine();
@@ -725,9 +781,32 @@ public sealed class TelegramBotCommandHandler(
             builder.AppendLine($"💰 Доступно: <b>{Money(partner.AvailableBalance)} грн</b> • В холді: {Money(partner.PendingBalance)} грн");
             builder.Append($"💳 Картка: {cardInfo}");
             builder.AppendLine();
+
+            if (rows.Count < 10)
+            {
+                var targetPct = partner.CommissionPercent >= 5m ? 3 : 5;
+                var icon = targetPct == 5 ? "⬆️" : "⬇️";
+                var shortName = partner.Name.Length > 14 ? partner.Name[..14] + "…" : partner.Name;
+                rows.Add(
+                [
+                    new TelegramInlineKeyboardButton(
+                        $"{icon} {shortName}: поставити {targetPct}%",
+                        $"partner_pct:{partner.Id:N}:{targetPct}")
+                ]);
+            }
         }
 
-        await SendAdminAsync(chatId, builder.ToString(), cancellationToken);
+        rows.Add([new TelegramInlineKeyboardButton("❌ Закрити", "msg_close")]);
+        var markup = new TelegramInlineKeyboardMarkup(rows);
+
+        if (editMessageId is > 0)
+        {
+            await telegramBotClient.EditMessageTextAsync(chatId, editMessageId.Value, builder.ToString(), markup, cancellationToken);
+        }
+        else
+        {
+            await telegramBotClient.SendMessageWithInlineKeyboardAsync(chatId, builder.ToString(), markup, cancellationToken);
+        }
     }
 
     private async Task SendAdminPayoutsAsync(long chatId, CancellationToken cancellationToken)
@@ -757,7 +836,7 @@ public sealed class TelegramBotCommandHandler(
         {
             builder.AppendLine();
             builder.AppendLine($"• <b>{Html(payout.PartnerName)}</b> (<code>{Html(payout.PartnerReferralCode)}</code>) — <b>{Money(payout.Amount)} грн</b>");
-            builder.AppendLine($"  Картка: <code>{Html(payout.CardNumber)}</code> • Статус: <b>{FormatPayoutStatus(payout.Status)}</b>");
+            builder.AppendLine($"  Картка: <code>{Html(MaskCardNumber(payout.CardNumber))}</code> • Статус: <b>{FormatPayoutStatus(payout.Status)}</b>");
             builder.Append($"  Дата: {payout.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm}");
         }
 
@@ -960,6 +1039,55 @@ public sealed class TelegramBotCommandHandler(
         string data,
         CancellationToken cancellationToken)
     {
+        var chatId = callbackQuery.Message?.Chat?.Id ?? user.Id;
+
+        if (data is "partner_reg_yes")
+        {
+            if (TelegramBotMenu.IsAdmin(configuration, user.Id))
+            {
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Ви є адміністратором.", cancellationToken);
+                return;
+            }
+
+            var (profile, created) = await EnsurePartnerAsync(user, cancellationToken);
+            await telegramBotClient.AnswerCallbackQueryAsync(
+                callbackQuery.Id,
+                created ? "🎉 Вітаємо в команді Jingle Decor!" : "Ви вже зареєстровані!",
+                cancellationToken);
+
+            if (callbackQuery.Message?.MessageId is { } msgId)
+            {
+                var deleted = await telegramBotClient.DeleteMessageAsync(chatId, msgId, cancellationToken);
+                if (!deleted)
+                {
+                    await telegramBotClient.EditMessageTextAsync(
+                        chatId,
+                        msgId,
+                        "✅ <b>Участь у партнерській програмі підтверджено!</b>",
+                        inlineMarkup: null,
+                        cancellationToken);
+                }
+            }
+
+            await SendPartnerWelcomeAsync(chatId, profile, created, cancellationToken);
+            return;
+        }
+
+        if (data is "partner_reg_no")
+        {
+            await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Скасовано", cancellationToken);
+            if (callbackQuery.Message?.MessageId is { } msgId)
+            {
+                await telegramBotClient.EditMessageTextAsync(
+                    chatId,
+                    msgId,
+                    "Добре! Якщо передумаєте — натисніть /start у будь-який момент.",
+                    inlineMarkup: null,
+                    cancellationToken);
+            }
+            return;
+        }
+
         if (!TelegramBotMenu.IsAdmin(configuration, user.Id))
         {
             await telegramBotClient.AnswerCallbackQueryAsync(
@@ -968,8 +1096,6 @@ public sealed class TelegramBotCommandHandler(
                 cancellationToken);
             return;
         }
-
-        var chatId = callbackQuery.Message?.Chat?.Id ?? user.Id;
 
         if (data is "ord_close" or "promo_close" or "msg_close")
         {
@@ -1135,7 +1261,44 @@ public sealed class TelegramBotCommandHandler(
                 filter,
                 page,
                 cancellationToken);
+            return;
         }
+
+        if (data.StartsWith("partner_pct:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = data.Split(':');
+            if (parts.Length < 3
+                || !Guid.TryParse(parts[1], out var partnerId)
+                || !decimal.TryParse(parts[2], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var pct)
+                || pct is <= 0m or > 100m)
+            {
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректні параметри.", cancellationToken);
+                return;
+            }
+
+            try
+            {
+                var updated = await referralService.UpdatePartnerAsync(
+                    partnerId,
+                    new UpdateReferralPartnerRequest { CommissionPercent = pct },
+                    cancellationToken);
+
+                await telegramBotClient.AnswerCallbackQueryAsync(
+                    callbackQuery.Id,
+                    $"✅ Для {updated.Name} встановлено {Percent(updated.CommissionPercent)}%",
+                    cancellationToken);
+
+                await SendAdminReferralsAsync(chatId, cancellationToken, callbackQuery.Message?.MessageId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Помилка оновлення відсотка партнера {PartnerId}.", partnerId);
+                await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, "Помилка оновлення.", cancellationToken);
+            }
+            return;
+        }
+
+        await telegramBotClient.AnswerCallbackQueryAsync(callbackQuery.Id, null, cancellationToken);
     }
 
     private Task<bool> SendAdminAsync(long chatId, string text, CancellationToken cancellationToken)
@@ -1169,7 +1332,8 @@ public sealed class TelegramBotCommandHandler(
                 new BotRegisterPartnerRequest
                 {
                     TelegramUserId = user.Id,
-                    Name = BuildPartnerName(user)
+                    Name = BuildPartnerName(user),
+                    CommissionPercent = 3.0m
                 },
                 cancellationToken);
 
@@ -1195,6 +1359,39 @@ public sealed class TelegramBotCommandHandler(
             : configuredSiteUrl.Trim();
 
         return $"{siteUrl.TrimEnd('/')}/?ref={Uri.EscapeDataString(referralCode)}";
+    }
+
+    private string BuildBotInviteLink(string referralCode)
+    {
+        var botUsername = configuration["Telegram:BotUsername"]?.Trim().TrimStart('@');
+        if (string.IsNullOrWhiteSpace(botUsername))
+        {
+            botUsername = "ref_ecommerce_bot";
+        }
+
+        return $"https://t.me/{botUsername}?start=inv_{Uri.EscapeDataString(referralCode)}";
+    }
+
+    private static string? ExtractStartPayload(string text)
+    {
+        if (!text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            return null;
+        }
+
+        var payload = parts[1].Trim();
+        if (payload.StartsWith("inv_", StringComparison.OrdinalIgnoreCase))
+        {
+            payload = payload[4..];
+        }
+
+        return payload.Length is >= 2 and <= 32 ? payload : null;
     }
 
     private Task<bool> SendAsync(long chatId, string text, CancellationToken cancellationToken)

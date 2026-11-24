@@ -123,6 +123,24 @@ public static class TelegramBotMenu
         return ids.ToArray();
     }
 
+    public static IReadOnlyList<long> GetAdminOrderNotificationChatIds(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var chatIds = GetAdminUserIds(configuration).ToHashSet();
+        if (long.TryParse(
+                configuration["Telegram:OrderNotificationChatId"]?.Trim(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var chatId) &&
+            chatId != 0)
+        {
+            chatIds.Add(chatId);
+        }
+
+        return chatIds.ToArray();
+    }
+
     public static bool IsAdmin(IConfiguration configuration, long telegramUserId)
     {
         if (telegramUserId <= 0)
