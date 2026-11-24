@@ -30,15 +30,15 @@ public sealed class MonobankService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(orderPublicId);
 
-        var order = await orderService.GetByPublicIdAsync(orderPublicId, cancellationToken)
+        var order = await dbContext.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.PublicId == orderPublicId, cancellationToken)
             ?? throw new KeyNotFoundException($"Замовлення '{orderPublicId}' не знайдено.");
 
         if (order.PaymentStatus == PaymentStatus.Paid)
         {
             throw new InvalidOperationException($"Замовлення '{orderPublicId}' вже успішно оплачене.");
         }
-
-        var token = GetToken();
 
         var redirectUrl = customRedirectUrl
             ?? configuration["Monobank:RedirectUrl"]
@@ -50,59 +50,214 @@ public sealed class MonobankService(
             ?? configuration["MONOBANK_WEBHOOK_URL"]
             ?? "https://mysite.com/api/payment/webhook";
 
-        // Amount in kopecks (e.g. 100 UAH = 10000)
-        var amountInKopecks = (long)Math.Round(order.TotalPrice * 100m, MidpointRounding.AwayFromZero);
-
-        var basketItems = order.Items.Select(item => new
+        // Map items to fiscal format
+        var fiscalItems = order.Items.Select(item =>
         {
-            name = item.ProductName,
-            qty = item.Quantity,
-            sum = (long)Math.Round(item.UnitPrice * item.Quantity * 100m, MidpointRounding.AwayFromZero),
-            unit = "шт."
+            var unitSum = (long)Math.Round(item.UnitPrice * 100m, MidpointRounding.AwayFromZero);
+            var itemTotal = (long)Math.Round(item.UnitPrice * item.Quantity * 100m, MidpointRounding.AwayFromZero);
+            return new MonobankFiscalItemDto
+            {
+                Name = item.ProductNameSnapshot,
+                Qty = item.Quantity,
+                Sum = unitSum,
+                Total = itemTotal,
+                Code = item.ProductId.ToString("N")[..8].ToUpperInvariant(),
+                Tax = [0], // Без ПДВ за замовчуванням (або [1] для 20%)
+                Unit = "шт."
+            };
         }).ToList();
 
-        var requestBody = new
+        List<MonobankDiscountDto>? discounts = null;
+        if (order.DiscountAmount > 0)
         {
-            amount = amountInKopecks,
-            ccy = 980, // UAH
-            merchantPaymInfo = new
+            discounts =
+            [
+                new MonobankDiscountDto
+                {
+                    Type = "discount",
+                    Mode = "value",
+                    Value = (long)Math.Round(order.DiscountAmount * 100m, MidpointRounding.AwayFromZero)
+                }
+            ];
+        }
+
+        var fiscalRequest = new CreateFiscalInvoiceRequest
+        {
+            BasketOrder = fiscalItems,
+            CartDiscounts = discounts,
+            Destination = $"Оплата замовлення {order.PublicId}",
+            Reference = order.PublicId,
+            RedirectUrl = redirectUrl,
+            WebhookUrl = webhookUrl
+        };
+
+        return await CreateFiscalInvoiceAsync(fiscalRequest, cancellationToken);
+    }
+
+    public async Task<MonobankInvoiceResponse> CreateFiscalInvoiceAsync(
+        CreateFiscalInvoiceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.BasketOrder == null || request.BasketOrder.Count == 0)
+        {
+            throw new ArgumentException("Кошик повинен містити хоча б один товар.", nameof(request));
+        }
+
+        var token = GetToken();
+
+        // 1. Обробка товарів та перевірка/розрахунок сум кожного товару
+        long subtotal = 0;
+        var formattedBasket = new List<object>();
+
+        foreach (var item in request.BasketOrder)
+        {
+            // Якщо total не задано, обчислюємо: round(qty * sum)
+            var lineTotal = item.Total > 0
+                ? item.Total
+                : (long)Math.Round(item.Qty * item.Sum, MidpointRounding.AwayFromZero);
+
+            // Обробка знижок на рівні конкретного товару
+            long itemFinalTotal = lineTotal;
+            List<object>? itemDiscountsFormatted = null;
+
+            if (item.Discounts != null && item.Discounts.Count > 0)
             {
-                reference = order.PublicId,
-                destination = $"Оплата замовлення {order.PublicId}",
-                comment = $"Замовлення {order.PublicId} в інтернет-магазині Jingle Decor",
-                basketOrder = basketItems
-            },
-            redirectUrl,
-            webHookUrl = string.IsNullOrWhiteSpace(webhookUrl) ? null : webhookUrl,
-            validity = 3600 // 1 hour
+                itemDiscountsFormatted = [];
+                foreach (var d in item.Discounts)
+                {
+                    var isDiscount = d.Type.Equals("discount", StringComparison.OrdinalIgnoreCase);
+                    var isPercent = d.Mode.Equals("percent", StringComparison.OrdinalIgnoreCase);
+
+                    long diff = isPercent
+                        ? (long)Math.Round(lineTotal * (d.Value / 100m), MidpointRounding.AwayFromZero)
+                        : (long)d.Value;
+
+                    itemFinalTotal = isDiscount ? (itemFinalTotal - diff) : (itemFinalTotal + diff);
+
+                    itemDiscountsFormatted.Add(new
+                    {
+                        type = d.Type.ToLowerInvariant(),
+                        mode = d.Mode.ToLowerInvariant(),
+                        value = d.Value
+                    });
+                }
+            }
+
+            subtotal += itemFinalTotal;
+
+            var itemObj = new Dictionary<string, object?>
+            {
+                ["name"] = item.Name,
+                ["qty"] = item.Qty,
+                ["sum"] = item.Sum,
+                ["total"] = lineTotal,
+                ["code"] = item.Code ?? "ITEM",
+                ["tax"] = item.Tax ?? [0],
+                ["unit"] = item.Unit ?? "шт."
+            };
+
+            if (!string.IsNullOrWhiteSpace(item.Barcode))
+            {
+                itemObj["barcode"] = item.Barcode.Trim();
+            }
+
+            if (itemDiscountsFormatted != null && itemDiscountsFormatted.Count > 0)
+            {
+                itemObj["discounts"] = itemDiscountsFormatted;
+            }
+
+            formattedBasket.Add(itemObj);
+        }
+
+        // 2. Обробка знижок або надбавок на рівні всього кошика
+        long finalInvoiceAmount = subtotal;
+        List<object>? cartDiscountsFormatted = null;
+
+        if (request.CartDiscounts != null && request.CartDiscounts.Count > 0)
+        {
+            cartDiscountsFormatted = [];
+            foreach (var d in request.CartDiscounts)
+            {
+                var isDiscount = d.Type.Equals("discount", StringComparison.OrdinalIgnoreCase);
+                var isPercent = d.Mode.Equals("percent", StringComparison.OrdinalIgnoreCase);
+
+                long diff = isPercent
+                    ? (long)Math.Round(subtotal * (d.Value / 100m), MidpointRounding.AwayFromZero)
+                    : (long)d.Value;
+
+                finalInvoiceAmount = isDiscount ? (finalInvoiceAmount - diff) : (finalInvoiceAmount + diff);
+
+                cartDiscountsFormatted.Add(new
+                {
+                    type = d.Type.ToLowerInvariant(),
+                    mode = d.Mode.ToLowerInvariant(),
+                    value = d.Value
+                });
+            }
+        }
+
+        // Страховка від від'ємної суми
+        if (finalInvoiceAmount <= 0)
+        {
+            finalInvoiceAmount = 100; // мінімум 1 грн (100 коп)
+        }
+
+        var reference = string.IsNullOrWhiteSpace(request.Reference)
+            ? $"fiscal_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"
+            : request.Reference.Trim();
+
+        var merchantPaymInfo = new Dictionary<string, object?>
+        {
+            ["reference"] = reference,
+            ["destination"] = request.Destination,
+            ["comment"] = request.Destination,
+            ["basketOrder"] = formattedBasket
+        };
+
+        if (cartDiscountsFormatted != null && cartDiscountsFormatted.Count > 0)
+        {
+            merchantPaymInfo["discounts"] = cartDiscountsFormatted;
+        }
+
+        var payload = new
+        {
+            amount = finalInvoiceAmount,
+            ccy = 980, // UAH
+            merchantPaymInfo,
+            redirectUrl = request.RedirectUrl,
+            webHookUrl = request.WebhookUrl,
+            validity = 3600
         };
 
         var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/create";
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, requestUri);
         requestMessage.Headers.Add("X-Token", token);
         requestMessage.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
+            JsonSerializer.Serialize(payload),
             Encoding.UTF8,
             "application/json");
 
-        logger.LogInformation("Creating Monobank invoice for order {OrderPublicId}, amount {Amount} kop, webhook: {WebhookUrl}",
-            order.PublicId, amountInKopecks, webhookUrl);
+        logger.LogInformation(
+            "Creating Monobank fiscal invoice: ref={Reference}, itemsCount={ItemsCount}, amount={Amount} kop, subtotal={Subtotal} kop",
+            reference, formattedBasket.Count, finalInvoiceAmount, subtotal);
 
         var response = await httpClient.SendAsync(requestMessage, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            logger.LogError("Monobank invoice creation failed for {OrderPublicId}. Status: {StatusCode}, Body: {Body}",
-                order.PublicId, response.StatusCode, responseContent);
-            throw new HttpRequestException($"Помилка створення інвойсу в Monobank: {responseContent}");
+            logger.LogError("Monobank fiscal invoice creation failed. Status: {StatusCode}, Body: {Body}",
+                response.StatusCode, responseContent);
+            throw new HttpRequestException($"Помилка створення фіскального інвойсу в Monobank: {responseContent}");
         }
 
         var invoiceResult = JsonSerializer.Deserialize<MonobankInvoiceResponse>(responseContent)
             ?? throw new InvalidOperationException("Отримано пусту відповідь від Monobank API.");
 
-        logger.LogInformation("Monobank invoice {InvoiceId} created successfully for order {OrderPublicId}.",
-            invoiceResult.InvoiceId, order.PublicId);
+        logger.LogInformation("Monobank fiscal invoice created successfully: invoiceId={InvoiceId}, pageUrl={PageUrl}",
+            invoiceResult.InvoiceId, invoiceResult.PageUrl);
 
         return invoiceResult;
     }
@@ -113,54 +268,87 @@ public sealed class MonobankService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var token = GetToken();
-        var reference = string.IsNullOrWhiteSpace(request.Reference)
-            ? $"test_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"
-            : request.Reference.Trim();
-
-        var requestBody = new
+        var defaultItem = new MonobankFiscalItemDto
         {
-            amount = request.AmountInKopecks,
-            ccy = 980, // UAH
-            merchantPaymInfo = new
-            {
-                reference,
-                destination = request.Destination,
-                comment = request.Destination
-            },
-            redirectUrl = request.RedirectUrl,
-            webHookUrl = request.WebhookUrl,
-            validity = 3600
+            Name = request.Destination,
+            Qty = 1m,
+            Sum = request.AmountInKopecks,
+            Total = request.AmountInKopecks,
+            Code = "CUSTOM",
+            Tax = [0],
+            Unit = "шт."
         };
 
-        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/create";
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, requestUri);
-        requestMessage.Headers.Add("X-Token", token);
-        requestMessage.Content = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+        var fiscalRequest = new CreateFiscalInvoiceRequest
+        {
+            BasketOrder = [defaultItem],
+            Destination = request.Destination,
+            Reference = request.Reference,
+            RedirectUrl = request.RedirectUrl,
+            WebhookUrl = request.WebhookUrl
+        };
 
-        logger.LogInformation("Creating custom Monobank invoice: ref={Reference}, amount={Amount} kop, webhook={WebhookUrl}",
-            reference, request.AmountInKopecks, request.WebhookUrl);
+        return await CreateFiscalInvoiceAsync(fiscalRequest, cancellationToken);
+    }
+
+    public async Task<MonobankFiscalChecksResponse> GetFiscalChecksAsync(
+        string invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(invoiceId);
+
+        var token = GetToken();
+        var requestUri = $"{GetBaseUrl()}/api/merchant/invoice/fiscal-checks?invoiceId={Uri.EscapeDataString(invoiceId)}";
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        requestMessage.Headers.Add("X-Token", token);
+
+        logger.LogInformation("Fetching fiscal checks for invoice {InvoiceId}", invoiceId);
 
         var response = await httpClient.SendAsync(requestMessage, cancellationToken);
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            logger.LogError("Monobank custom invoice creation failed. Status: {StatusCode}, Body: {Body}",
-                response.StatusCode, responseContent);
-            throw new HttpRequestException($"Помилка створення інвойсу в Monobank: {responseContent}");
+            logger.LogError("Monobank fiscal checks retrieval failed for invoice {InvoiceId}. Status: {StatusCode}, Body: {Body}",
+                invoiceId, response.StatusCode, responseContent);
+            throw new HttpRequestException($"Помилка отримання фіскальних чеків з Monobank: {responseContent}");
         }
 
-        var invoiceResult = JsonSerializer.Deserialize<MonobankInvoiceResponse>(responseContent)
-            ?? throw new InvalidOperationException("Отримано пусту відповідь від Monobank API.");
+        return JsonSerializer.Deserialize<MonobankFiscalChecksResponse>(responseContent)
+            ?? throw new InvalidOperationException("Отримано пусту відповідь від сервісу фіскальних чеків.");
+    }
 
-        logger.LogInformation("Custom Monobank invoice created: invoiceId={InvoiceId}, pageUrl={PageUrl}",
-            invoiceResult.InvoiceId, invoiceResult.PageUrl);
+    public async Task<byte[]?> GetFiscalCheckPdfBytesAsync(
+        string invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var checksResponse = await GetFiscalChecksAsync(invoiceId, cancellationToken);
+        if (checksResponse.Checks == null || checksResponse.Checks.Count == 0)
+        {
+            logger.LogWarning("No fiscal checks found for invoice {InvoiceId}", invoiceId);
+            return null;
+        }
 
-        return invoiceResult;
+        // Шукаємо чек операції продажу (sale)
+        var saleCheck = checksResponse.Checks.FirstOrDefault(c => c.Type == "sale" && !string.IsNullOrWhiteSpace(c.FileBase64))
+            ?? checksResponse.Checks.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.FileBase64));
+
+        if (saleCheck == null || string.IsNullOrWhiteSpace(saleCheck.FileBase64))
+        {
+            logger.LogWarning("Fiscal check for invoice {InvoiceId} does not yet have an attached PDF file (status: {Status})",
+                invoiceId, checksResponse.Checks[0].Status);
+            return null;
+        }
+
+        try
+        {
+            return Convert.FromBase64String(saleCheck.FileBase64.Trim());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to decode Base64 fiscal PDF for invoice {InvoiceId}", invoiceId);
+            return null;
+        }
     }
 
     public async Task<bool> VerifyWebhookSignatureAsync(
@@ -174,7 +362,6 @@ public sealed class MonobankService(
             return false;
         }
 
-        // 1. Try with currently cached public key
         var pubKey = await GetPublicKeyAsync(forceRefresh: false, cancellationToken);
         if (!string.IsNullOrWhiteSpace(pubKey))
         {
@@ -184,7 +371,6 @@ public sealed class MonobankService(
             }
         }
 
-        // 2. If verification failed, refresh public key once (handles key rotation)
         logger.LogWarning("Monobank signature verification failed with cached key. Refreshing public key from API...");
         pubKey = await GetPublicKeyAsync(forceRefresh: true, cancellationToken);
 
@@ -214,7 +400,6 @@ public sealed class MonobankService(
             return null;
         }
 
-        // Find corresponding order in database by PublicId or ExternalPaymentId
         var order = await dbContext.Orders
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.PublicId == payload.Reference || o.ExternalPaymentId == payload.InvoiceId, cancellationToken);
@@ -226,7 +411,6 @@ public sealed class MonobankService(
 
         if (order is not null)
         {
-            // Persist invoiceId, payment provider, date and detailed payment log on the order
             order.ExternalPaymentId = payload.InvoiceId;
             order.PaymentProvider = "Monobank";
             order.UpdatedAt = now;
@@ -243,7 +427,6 @@ public sealed class MonobankService(
                 payload.Reference, payload.InvoiceId);
         }
 
-        // Status handling: success, failure, processing, hold, expired, reversed
         var normalizedStatus = payload.Status.ToLowerInvariant().Trim();
         switch (normalizedStatus)
         {
@@ -407,13 +590,11 @@ public sealed class MonobankService(
                 ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(candidate), out _);
             }
 
-            // 1. Try standard RFC 3279 DER Sequence format (standard for Java SHA256withECDSA)
             if (ecdsa.VerifyData(bodyBytes, signatureBytes, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence))
             {
                 return true;
             }
 
-            // 2. Fallback to IEEE P1363 fixed field concatenation (raw r || s)
             if (ecdsa.VerifyData(bodyBytes, signatureBytes, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation))
             {
                 return true;

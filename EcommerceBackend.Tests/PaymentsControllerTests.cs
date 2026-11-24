@@ -116,10 +116,34 @@ public sealed class PaymentsControllerTests
         Assert.True(monobankService.ProcessWebhookCalled);
     }
 
+    [Fact]
+    public async Task DownloadFiscalCheckPdf_ReturnsFileResult_WhenPdfExists()
+    {
+        var orderService = new FakeOrderService();
+        var monobankService = new FakeMonobankService
+        {
+            PdfBytesResult = "%PDF-1.4 sample content"u8.ToArray()
+        };
+        var config = new ConfigurationBuilder().Build();
+        var controller = new PaymentsController(
+            orderService,
+            monobankService,
+            config,
+            NullLogger<PaymentsController>.Instance);
+
+        var result = await controller.DownloadFiscalCheckPdf("test-inv", CancellationToken.None);
+
+        var fileResult = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/pdf", fileResult.ContentType);
+        Assert.Equal("fiscal_check_test-inv.pdf", fileResult.FileDownloadName);
+        Assert.NotEmpty(fileResult.FileContents);
+    }
+
     private sealed class FakeMonobankService : IMonobankService
     {
         public bool VerifySignatureResult { get; set; } = true;
         public bool ProcessWebhookCalled { get; private set; }
+        public byte[]? PdfBytesResult { get; set; }
 
         public Task<MonobankInvoiceResponse> CreateInvoiceForOrderAsync(
             string orderPublicId,
@@ -132,6 +156,21 @@ public sealed class PaymentsControllerTests
             CreateCustomMonobankInvoiceRequest request,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new MonobankInvoiceResponse { InvoiceId = "test_inv", PageUrl = "https://pay.mbank.biz/test" });
+
+        public Task<MonobankInvoiceResponse> CreateFiscalInvoiceAsync(
+            CreateFiscalInvoiceRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MonobankInvoiceResponse { InvoiceId = "test_fiscal", PageUrl = "https://pay.mbank.biz/test_fiscal" });
+
+        public Task<MonobankFiscalChecksResponse> GetFiscalChecksAsync(
+            string invoiceId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MonobankFiscalChecksResponse());
+
+        public Task<byte[]?> GetFiscalCheckPdfBytesAsync(
+            string invoiceId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(PdfBytesResult);
 
         public Task<bool> VerifyWebhookSignatureAsync(
             byte[] rawBodyBytes,

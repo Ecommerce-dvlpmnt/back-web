@@ -16,7 +16,7 @@ public sealed class PaymentsController(
     IConfiguration configuration,
     ILogger<PaymentsController> logger) : ControllerBase
 {
-    /// <summary>Створення інвойсу в Monobank для існуючого замовлення за його публічним номером (наприклад JD-ABC12345).</summary>
+    /// <summary>Створення інвойсу в Monobank для існуючого замовлення з деталізованим кошиком для пРРО.</summary>
     [HttpPost("monobank/create/{orderPublicId}")]
     [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -35,6 +35,18 @@ public sealed class PaymentsController(
         return Ok(invoice);
     }
 
+    /// <summary>Створення платежу з переліком товарів, знижками/надбавками та фіскалізацією (пРРО).</summary>
+    [HttpPost("monobank/create-fiscal-invoice")]
+    [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<MonobankInvoiceResponse>> CreateFiscalInvoice(
+        [FromBody] CreateFiscalInvoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await monobankService.CreateFiscalInvoiceAsync(request, cancellationToken);
+        return Ok(invoice);
+    }
+
     /// <summary>Створення тестового або довільного інвойсу в Monobank (за замовчуванням: 100 грн, "Тестова оплата").</summary>
     [HttpPost("monobank/create-test-invoice")]
     [ProducesResponseType(typeof(MonobankInvoiceResponse), StatusCodes.Status200OK)]
@@ -46,6 +58,37 @@ public sealed class PaymentsController(
         var customRequest = request ?? new CreateCustomMonobankInvoiceRequest();
         var invoice = await monobankService.CreateCustomInvoiceAsync(customRequest, cancellationToken);
         return Ok(invoice);
+    }
+
+    /// <summary>Отримання сформованих фіскальних чеків (дані та посилання на tax.gov.ua) за ID інвойсу.</summary>
+    [HttpGet("monobank/fiscal-checks/{invoiceId}")]
+    [ProducesResponseType(typeof(MonobankFiscalChecksResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MonobankFiscalChecksResponse>> GetFiscalChecks(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var checks = await monobankService.GetFiscalChecksAsync(invoiceId, cancellationToken);
+        return Ok(checks);
+    }
+
+    /// <summary>Завантаження друкованого PDF-файлу фіскального чека Monobank (пРРО).</summary>
+    [HttpGet("monobank/fiscal-checks/{invoiceId}/pdf")]
+    [Produces("application/pdf")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadFiscalCheckPdf(
+        string invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var pdfBytes = await monobankService.GetFiscalCheckPdfBytesAsync(invoiceId, cancellationToken);
+        if (pdfBytes == null || pdfBytes.Length == 0)
+        {
+            return NotFound(new { error = "PDF фіскального чека ще не сформовано або інвойс не знайдено." });
+        }
+
+        return File(pdfBytes, "application/pdf", $"fiscal_check_{invoiceId}.pdf");
     }
 
     /// <summary>
@@ -107,7 +150,6 @@ public sealed class PaymentsController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Помилка при обробці вебхука Monobank для інвойсу {InvoiceId}", payload.InvoiceId);
-            // Завжди повертаємо 200 банку, щоб уникнути спаму повторними запитами при бізнес-помилках
             return Ok();
         }
     }

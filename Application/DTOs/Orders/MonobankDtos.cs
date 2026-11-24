@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace EcommerceBackend.Application.DTOs.Orders;
@@ -17,11 +16,9 @@ public sealed record CreateMonobankPaymentRequest
 public sealed record CreateCustomMonobankInvoiceRequest
 {
     /// <summary>Amount in kopecks (e.g. 10000 = 100.00 UAH). Default: 10000 (100 грн).</summary>
-    [Range(100, 100000000)]
     public long AmountInKopecks { get; init; } = 10000;
 
     /// <summary>Payment description / destination. Default: "Тестова оплата".</summary>
-    [StringLength(255)]
     public string Destination { get; init; } = "Тестова оплата";
 
     /// <summary>Redirect URL after payment. Default: https://mysite.com/payment-result.</summary>
