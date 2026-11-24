@@ -260,6 +260,8 @@ public sealed class TelegramBotCommandHandler(
             <code>{safeStoreLink}</code>
 
             Ви отримуєте <b>{Percent(profile.CommissionPercent)}%</b> від суми кожного доставленого замовлення за вашим посиланням.
+            ⏳ Бонус потрапляє в холд і стає доступним одразу після отримання посилки клієнтом на Новій Пошті.
+            💳 Мінімальна сума виведення — <b>300 грн</b> на будь-яку українську картку.
 
             🤝 Посилання на бота для друзів (вони отримуватимуть 3% зі своїх замовлень):
             <code>{safeBotInviteLink}</code>
@@ -1078,6 +1080,18 @@ public sealed class TelegramBotCommandHandler(
                 created ? "🎉 Вітаємо в команді Jingle Decor!" : "Ви вже зареєстровані!",
                 cancellationToken);
 
+            if (created && !string.IsNullOrWhiteSpace(inviterCode))
+            {
+                var inviter = await referralService.FindPartnerByCodeAsync(inviterCode, cancellationToken);
+                if (inviter is not null && inviter.TelegramUserId != user.Id)
+                {
+                    _ = telegramBotClient.SendMessageAsync(
+                        inviter.TelegramUserId,
+                        $"🤝 За вашим посиланням до партнерської програми приєднався новий партнер: <b>{Html(profile.Name)}</b>!",
+                        CancellationToken.None);
+                }
+            }
+
             if (callbackQuery.Message?.MessageId is { } msgId)
             {
                 var deleted = await telegramBotClient.DeleteMessageAsync(chatId, msgId, cancellationToken);
@@ -1310,6 +1324,16 @@ public sealed class TelegramBotCommandHandler(
                     callbackQuery.Id,
                     $"✅ Для {updated.Name} встановлено {Percent(updated.CommissionPercent)}%",
                     cancellationToken);
+
+                if (updated.TelegramUserId > 0)
+                {
+                    var pctText = Percent(updated.CommissionPercent);
+                    var emoji = updated.CommissionPercent >= 5m ? "🎉" : "ℹ️";
+                    _ = telegramBotClient.SendMessageAsync(
+                        updated.TelegramUserId,
+                        $"{emoji} Вашу партнерську ставку оновлено до <b>{pctText}%</b>! Нові замовлення за вашим посиланням рахуватимуться за новою ставкою.",
+                        CancellationToken.None);
+                }
 
                 await SendAdminReferralsAsync(chatId, cancellationToken, callbackQuery.Message?.MessageId);
             }
