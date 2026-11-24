@@ -5,6 +5,32 @@ namespace EcommerceBackend.Application.Interfaces;
 
 public interface ITelegramBotClient
 {
+    Task<TelegramWebhookInfo?> GetWebhookInfoAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<TelegramWebhookInfo?>(null);
+
+    Task<bool> SetWebhookAsync(
+        string webhookUrl,
+        string? secretToken = null,
+        CancellationToken cancellationToken = default) =>
+        SetWebhookAsync(webhookUrl, secretToken, false, cancellationToken);
+
+    Task<bool> SetWebhookAsync(
+        string webhookUrl,
+        string? secretToken,
+        bool dropPendingUpdates,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
+
+    Task<bool> DeleteWebhookAsync(
+        CancellationToken cancellationToken = default) =>
+        DeleteWebhookAsync(false, cancellationToken);
+
+    Task<bool> DeleteWebhookAsync(
+        bool dropPendingUpdates,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(true);
+
     Task<IReadOnlyList<TelegramUpdate>> GetUpdatesAsync(
         long offset,
         int timeoutSeconds = 30,

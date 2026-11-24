@@ -547,6 +547,11 @@ public sealed class OrderService(
             order.OrderNumber,
             order.PublicId);
 
+        if (referralReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardNotificationAsync(referralReward, CancellationToken.None);
+        }
+
         return new OrderPaymentConfirmationResponse(
             MapToResponse(order),
             referralReward,
