@@ -73,7 +73,8 @@ public sealed class MonobankService(
                 Total = itemTotal,
                 Code = sku,
                 Tax = [defaultTaxCode],
-                Unit = "шт."
+                Unit = "шт.",
+                Icon = item.Product?.MainImageUrl
             };
         }).ToList();
 
@@ -232,6 +233,13 @@ public sealed class MonobankService(
             if (!string.IsNullOrWhiteSpace(item.Barcode))
             {
                 itemObj["barcode"] = item.Barcode.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Icon)
+                && Uri.TryCreate(item.Icon.Trim(), UriKind.Absolute, out var iconUri)
+                && (iconUri.Scheme == Uri.UriSchemeHttps || iconUri.Scheme == Uri.UriSchemeHttp))
+            {
+                itemObj["icon"] = iconUri.ToString();
             }
 
             if (itemDiscountsFormatted is { Count: > 0 })

@@ -67,6 +67,11 @@ public sealed record MonobankFiscalItemDto
     [JsonPropertyName("unit")]
     [StringLength(20)]
     public string? Unit { get; init; } = "шт.";
+
+    /// <summary>URL фотографії товару для сторінки оплати Monobank (опційно).</summary>
+    [JsonPropertyName("icon")]
+    [StringLength(1024)]
+    public string? Icon { get; init; }
 }
 
 /// <summary>Запит на створення платежу з фіскальним кошиком, знижками та ПРРО (тільки для адміністраторів / внутрішнього виклику).</summary>
