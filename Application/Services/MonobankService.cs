@@ -20,8 +20,7 @@ public sealed class MonobankService(
     IOrderService orderService,
     AppDbContext dbContext,
     IConfiguration configuration,
-    ILogger<MonobankService> logger,
-    ITelegramBotClient? telegramBotClient = null) : IMonobankService
+    ILogger<MonobankService> logger) : IMonobankService
 {
     private const string DefaultBaseUrl = "https://api.monobank.ua";
     private const string DefaultPublicSiteUrl = "https://www.jingledecor.com.ua";
@@ -404,6 +403,56 @@ public sealed class MonobankService(
         if (order is null)
             return null;
 
+        // Резервна жива синхронізація: якщо клієнт повернувся на /payment-result швидше за вебхук
+        // (або вебхук не був доставлений), перевіряємо статус напряму в Monobank API по X-Token.
+        if (order.PaymentStatus == PaymentStatus.Pending && !string.IsNullOrWhiteSpace(order.ExternalPaymentId))
+        {
+            try
+            {
+                var liveStatus = await GetInvoiceStatusAsync(order.ExternalPaymentId, requireOrderMatch: false, cancellationToken);
+                var normLiveStatus = liveStatus.Status?.Trim().ToLowerInvariant();
+                if (normLiveStatus is "success" or "failure" or "expired" or "reversed")
+                {
+                    await ProcessWebhookAsync(
+                        new MonobankWebhookPayload
+                        {
+                            InvoiceId = liveStatus.InvoiceId,
+                            Status = liveStatus.Status!,
+                            Amount = liveStatus.Amount,
+                            FinalAmount = liveStatus.FinalAmount,
+                            Ccy = liveStatus.Ccy,
+                            Reference = string.IsNullOrWhiteSpace(liveStatus.Reference) ? order.PublicId : liveStatus.Reference,
+                            FailureReason = liveStatus.FailureReason,
+                            ModifiedDate = liveStatus.ModifiedDate
+                        },
+                        cancellationToken);
+
+                    var refreshedOrder = await dbContext.Orders
+                        .AsNoTracking()
+                        .Where(o => o.PublicId == normalizedId)
+                        .Select(o => new
+                        {
+                            o.PublicId,
+                            o.OrderNumber,
+                            o.TotalPrice,
+                            o.PaymentStatus,
+                            o.OrderStatus,
+                            o.ExternalPaymentId
+                        })
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    if (refreshedOrder is null)
+                        return null;
+
+                    order = refreshedOrder;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Live Monobank status sync skipped for order {OrderPublicId}", normalizedId);
+            }
+        }
+
         var isPaid = order.PaymentStatus == PaymentStatus.Paid;
         var canRetry = !isPaid && order.OrderStatus is not (OrderStatus.Cancelled or OrderStatus.Refused or OrderStatus.Returned);
         var receiptAvailable = isPaid && !string.IsNullOrWhiteSpace(order.ExternalPaymentId);
@@ -630,7 +679,6 @@ public sealed class MonobankService(
                 };
 
                 var confirmation = await orderService.ProcessPaymentWebhookAsync(webhookRequest, cancellationToken);
-                await NotifyAdminsOrderPaidAsync(orderSnapshot.OrderNumber, orderSnapshot.PublicId, amountUah, invoiceId);
                 return confirmation;
             }
 
@@ -787,36 +835,6 @@ public sealed class MonobankService(
         }
     }
 
-    private async Task NotifyAdminsOrderPaidAsync(int orderNumber, string publicId, decimal amountUah, string invoiceId)
-    {
-        if (telegramBotClient is null)
-            return;
-
-        try
-        {
-            var adminIds = TelegramBotMenu.GetAdminOrderNotificationChatIds(configuration);
-            if (adminIds.Count == 0)
-                return;
-
-            var text = string.Format(
-                CultureInfo.InvariantCulture,
-                "✅ <b>Замовлення #{0} оплачено онлайн (Monobank)!</b>\nСума: <b>{1:0.00} грн</b>\nКод: <code>{2}</code>\nІнвойс: <code>{3}</code>",
-                orderNumber,
-                amountUah,
-                WebUtility.HtmlEncode(publicId),
-                WebUtility.HtmlEncode(invoiceId));
-
-            foreach (var adminId in adminIds)
-            {
-                await telegramBotClient.SendMessageAsync(adminId, text, CancellationToken.None);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Не вдалося надіслати Telegram-сповіщення про оплату замовлення #{OrderNumber}.", orderNumber);
-        }
-    }
-
     private static (string NormType, string NormMode, long Diff) CalculateDiscountAdjustment(
         long baseAmountKopecks,
         MonobankDiscountDto discount)
@@ -872,12 +890,22 @@ public sealed class MonobankService(
     private string? ResolveConfiguredWebhookUrl()
     {
         var configured = (configuration["Monobank:WebhookUrl"] ?? configuration["MONOBANK_WEBHOOK_URL"])?.Trim();
-        if (string.IsNullOrWhiteSpace(configured) || ContainsPlaceholderDomain(configured))
+        if (!string.IsNullOrWhiteSpace(configured) && !ContainsPlaceholderDomain(configured))
         {
-            return null;
+            return configured;
         }
 
-        return configured;
+        var railwayDomain = configuration["RAILWAY_PUBLIC_DOMAIN"]?.Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(railwayDomain) && !ContainsPlaceholderDomain(railwayDomain))
+        {
+            var baseUrl = railwayDomain.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || railwayDomain.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? railwayDomain
+                : $"https://{railwayDomain}";
+            return $"{baseUrl}/api/payments/monobank/webhook";
+        }
+
+        return null;
     }
 
     private static bool ContainsPlaceholderDomain(string url) =>

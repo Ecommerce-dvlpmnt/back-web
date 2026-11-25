@@ -108,7 +108,7 @@ public static class TelegramBotMenu
             }
         }
 
-        var rawList = configuration["Telegram:AdminUserIds"];
+        var rawList = configuration["Telegram:AdminUserIds"] ?? configuration["TELEGRAM_ADMIN_USER_IDS"];
         if (!string.IsNullOrWhiteSpace(rawList))
         {
             foreach (var part in rawList.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -128,8 +128,11 @@ public static class TelegramBotMenu
         ArgumentNullException.ThrowIfNull(configuration);
 
         var chatIds = GetAdminUserIds(configuration).ToHashSet();
+        var rawChatId = (configuration["Telegram:OrderNotificationChatId"]
+            ?? configuration["TELEGRAM_ORDER_NOTIFICATION_CHAT_ID"])?.Trim();
+
         if (long.TryParse(
-                configuration["Telegram:OrderNotificationChatId"]?.Trim(),
+                rawChatId,
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
                 out var chatId) &&

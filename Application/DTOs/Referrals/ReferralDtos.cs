@@ -239,7 +239,8 @@ public sealed record AdminBotOrderNotificationDto(
     string? ReferrerCode,
     decimal ReferralRewardAmount,
     DateTime CreatedAt,
-    IReadOnlyList<AdminBotOrderItemDto> Items);
+    IReadOnlyList<AdminBotOrderItemDto> Items,
+    PaymentStatus PaymentStatus = PaymentStatus.Pending);
 
 public sealed record AdminBotOrdersPageDto(
     string Filter,

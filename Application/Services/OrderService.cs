@@ -161,33 +161,15 @@ public sealed class OrderService(
                 .FirstOrDefaultAsync(p => p.Id == order.PromoCodeId.Value, cancellationToken);
         }
 
-        _ = telegramBotClient.SendAdminNewOrderNotificationAsync(
-            new AdminBotOrderNotificationDto(
-                order.Id,
-                order.OrderNumber,
-                order.PublicId,
-                $"{order.CustomerFirstName} {order.CustomerLastName}".Trim(),
-                order.CustomerPhone,
-                order.DeliveryCityName,
-                order.DeliveryWarehouseName,
-                order.PaymentMethod,
-                order.OrderStatus,
-                order.TotalPrice,
-                order.DiscountAmount,
-                attachedPromo?.Code,
-                attachedPromo?.DiscountPercent,
-                attachedPartner?.Name,
-                attachedPartner?.ReferralCode,
-                order.ReferralRewardAmount,
-                order.CreatedAt,
-                order.Items
-                    .Select(i => new AdminBotOrderItemDto(
-                        i.ProductNameSnapshot,
-                        i.Quantity,
-                        i.UnitPrice,
-                        i.UnitPrice * i.Quantity))
-                    .ToArray()),
-            CancellationToken.None);
+        // Для накладеного платежу надсилаємо сповіщення адмінам одразу.
+        // Для онлайн-оплати (Monobank) надсилаємо повну картку замовлення в момент фактичної оплати (ConfirmPaymentAsync),
+        // щоб у бот не летіли неоплачені чернетки зі статусом "Нове".
+        if (order.PaymentMethod != PaymentMethod.Online)
+        {
+            _ = telegramBotClient.SendAdminNewOrderNotificationAsync(
+                BuildAdminOrderNotificationDto(order, attachedPromo, attachedPartner),
+                CancellationToken.None);
+        }
 
         logger?.LogInformation(
             "Замовлення #{OrderNumber} успішно створено (PublicId: {PublicId}). Позицій: {ItemCount}, загальна сума: {TotalPrice} грн.",
@@ -512,6 +494,7 @@ public sealed class OrderService(
     {
         ReferralRewardResult? referralReward;
         Order order;
+        var newlyPaid = false;
 
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
@@ -531,6 +514,7 @@ public sealed class OrderService(
             {
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.UpdatedAt = now;
+                newlyPaid = true;
             }
 
             ApplyPaymentMetadata(order, request?.PaymentProvider, request?.ExternalPaymentId, request?.Comment, now);
@@ -543,20 +527,76 @@ public sealed class OrderService(
         }
 
         logger?.LogInformation(
-            "Оплату замовлення #{OrderNumber} (PublicId: {PublicId}) підтверджено.",
+            "Оплату замовлення #{OrderNumber} (PublicId: {PublicId}) підтверджено (newlyPaid={NewlyPaid}).",
             order.OrderNumber,
-            order.PublicId);
+            order.PublicId,
+            newlyPaid);
 
         if (referralReward is not null)
         {
             _ = telegramBotClient.SendReferralRewardNotificationAsync(referralReward, CancellationToken.None);
         }
 
+        var adminNotificationSent = false;
+        if (newlyPaid)
+        {
+            PromoCode? attachedPromo = null;
+            if (order.PromoCodeId.HasValue)
+            {
+                attachedPromo = await dbContext.PromoCodes
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == order.PromoCodeId.Value, CancellationToken.None);
+            }
+
+            Partner? attachedPartner = null;
+            if (order.ReferrerId.HasValue)
+            {
+                attachedPartner = await dbContext.Partners
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == order.ReferrerId.Value, CancellationToken.None);
+            }
+
+            adminNotificationSent = await telegramBotClient.SendAdminNewOrderNotificationAsync(
+                BuildAdminOrderNotificationDto(order, attachedPromo, attachedPartner),
+                CancellationToken.None);
+        }
+
         return new OrderPaymentConfirmationResponse(
             MapToResponse(order),
             referralReward,
-            false);
+            adminNotificationSent);
     }
+
+    private static AdminBotOrderNotificationDto BuildAdminOrderNotificationDto(
+        Order order,
+        PromoCode? promo,
+        Partner? referrer) =>
+        new(
+            order.Id,
+            order.OrderNumber,
+            order.PublicId,
+            $"{order.CustomerFirstName} {order.CustomerLastName}".Trim(),
+            order.CustomerPhone,
+            order.DeliveryCityName,
+            order.DeliveryWarehouseName,
+            order.PaymentMethod,
+            order.OrderStatus,
+            order.TotalPrice,
+            order.DiscountAmount,
+            promo?.Code,
+            promo?.DiscountPercent,
+            referrer?.Name,
+            referrer?.ReferralCode,
+            order.ReferralRewardAmount,
+            order.CreatedAt,
+            order.Items
+                .Select(i => new AdminBotOrderItemDto(
+                    i.ProductNameSnapshot,
+                    i.Quantity,
+                    i.UnitPrice,
+                    i.UnitPrice * i.Quantity))
+                .ToArray(),
+            order.PaymentStatus);
 
     public async Task<OrderPaymentConfirmationResponse> ProcessPaymentWebhookAsync(
         PaymentWebhookRequest request,
