@@ -26,8 +26,18 @@ public sealed class ReferralLifecycleScenarioTests
 
         const long telegramUserId = 777123456L;
 
-        // 2. Партнер тисне /start у Телеграм-боті
+        // 2. Партнер тисне /start у Телеграм-боті і підтверджує участь кнопкою
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "/start"));
+        Assert.Null(system.GetProfile(telegramUserId));
+
+        await handler.HandleUpdateAsync(new TelegramUpdate(
+            UpdateId: 2,
+            Message: null,
+            CallbackQuery: new TelegramCallbackQuery(
+                "cb_start_1",
+                new TelegramUser(telegramUserId, false, "Test", "User", "testuser", "uk"),
+                new TelegramMessage(1, null, new TelegramChat(telegramUserId, "private"), 1700000000, "opt-in"),
+                "partner_reg_yes")));
 
         var partner = system.GetProfile(telegramUserId);
         Assert.NotNull(partner);
@@ -90,14 +100,14 @@ public sealed class ReferralLifecycleScenarioTests
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "350"));
         Assert.Contains("Введіть номер банківської картки", telegramClient.LastMessageText);
 
-        // Крок 3: Вводить номер картки
-        await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "4149 4999 1234 5678"));
+        // Крок 3: Вводить номер картки (валідний за Луном)
+        await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "4149 4999 1234 5673"));
         Assert.Contains("Заявку на виведення 350.00 грн створено", telegramClient.LastMessageText);
 
         // Баланс списався під заявку, а картка збереглася у профілі реферала:
         var statsAfterWithdraw = system.GetStats(telegramUserId);
         Assert.Equal(0m, statsAfterWithdraw.AvailableBalance);
-        Assert.Equal("4149499912345678", partner.CardNumber);
+        Assert.Equal("4149499912345673", partner.CardNumber);
         Assert.Single(system.PayoutRequests);
 
         var payout = system.PayoutRequests[0];
@@ -115,7 +125,7 @@ public sealed class ReferralLifecycleScenarioTests
         // 10. Повторне виведення: бот пропонує збережену картку, реферал підтверджує в 1 клік
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, TelegramBotMenu.WithdrawButton));
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, "400"));
-        Assert.Contains("4149 •••• •••• 5678", telegramClient.LastMessageText);
+        Assert.Contains("4149 •••• •••• 5673", telegramClient.LastMessageText);
 
         await handler.HandleUpdateAsync(CreateMessage(telegramUserId, TelegramBotMenu.ConfirmSavedCardButton));
         Assert.Contains("Заявку на виведення 400.00 грн створено", telegramClient.LastMessageText);

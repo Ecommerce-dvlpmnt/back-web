@@ -49,3 +49,14 @@ public sealed record TelegramInlineKeyboardMarkup(
 public sealed record TelegramBotCommand(
     [property: JsonPropertyName("command")] string Command,
     [property: JsonPropertyName("description")] string Description);
+
+public sealed record TelegramWebhookInfo(
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("has_custom_certificate")] bool HasCustomCertificate,
+    [property: JsonPropertyName("pending_update_count")] int PendingUpdateCount,
+    [property: JsonPropertyName("ip_address")] string? IpAddress = null,
+    [property: JsonPropertyName("last_error_date")] long? LastErrorDate = null,
+    [property: JsonPropertyName("last_error_message")] string? LastErrorMessage = null,
+    [property: JsonPropertyName("last_synchronization_error_date")] long? LastSynchronizationErrorDate = null,
+    [property: JsonPropertyName("max_connections")] int? MaxConnections = null,
+    [property: JsonPropertyName("allowed_updates")] string[]? AllowedUpdates = null);

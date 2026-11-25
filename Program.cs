@@ -210,6 +210,10 @@ builder.Services.AddHttpClient<INovaPoshtaClient, NovaPoshtaClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.AddHttpClient<IMonobankService, MonobankService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddHttpClient(TelegramBotClient.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(65);
@@ -226,7 +230,8 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IReferralService, ReferralService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddHostedService<TelegramBotPollingService>();
+// Telegram polling перенесен в отдельный сервис tg-bot; back-web только отправляет уведомления о заказах
+// builder.Services.AddHostedService<TelegramBotPollingService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();

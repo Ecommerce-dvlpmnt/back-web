@@ -10,6 +10,7 @@ public class Partner
     public string? CardHolderName { get; set; }
     public decimal CommissionPercent { get; set; } = 5.0m;
     public decimal TotalEarned { get; set; }
+    public Guid? InvitedByPartnerId { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public ICollection<Order> Orders { get; set; } = new List<Order>();

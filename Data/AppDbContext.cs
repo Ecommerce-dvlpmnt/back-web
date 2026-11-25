@@ -108,7 +108,10 @@ public class AppDbContext : DbContext
         e.Property(x => x.CardHolderName).HasColumnName("CardHolderName").HasMaxLength(150);
         e.Property(x => x.CommissionPercent).HasColumnName("CommissionPercent").HasPrecision(5, 2).HasDefaultValue(5.0m);
         e.Property(x => x.TotalEarned).HasColumnName("TotalEarned").HasPrecision(12, 2).HasDefaultValue(0m);
+        e.Property(x => x.InvitedByPartnerId).HasColumnName("InvitedByPartnerId");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        e.HasIndex(x => x.InvitedByPartnerId).HasDatabaseName("IX_Referrals_InvitedByPartnerId");
 
         e.HasIndex(x => x.ReferralCode).IsUnique().HasDatabaseName("Partners_ReferralCode_key");
         e.HasIndex(x => x.TelegramUserId).IsUnique().HasDatabaseName("Partners_TelegramUserId_key");

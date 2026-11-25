@@ -301,9 +301,22 @@ public sealed class ReferralService(
             })
             .ToDictionaryAsync(x => x.PartnerId, cancellationToken);
 
+        var partnersById = partners.ToDictionary(p => p.Id);
+        var invitedLookup = partners
+            .Where(p => p.InvitedByPartnerId.HasValue)
+            .GroupBy(p => p.InvitedByPartnerId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         return partners.Select(p =>
         {
             var stats = orderStats.GetValueOrDefault(p.Id);
+            var inviter = p.InvitedByPartnerId.HasValue
+                ? partnersById.GetValueOrDefault(p.InvitedByPartnerId.Value)
+                : null;
+            var invitedList = invitedLookup.GetValueOrDefault(p.Id);
+            var invitedTurnover = invitedList?.Sum(x => orderStats.GetValueOrDefault(x.Id)?.TotalTurnover ?? 0m) ?? 0m;
+            var invitedEarned = invitedList?.Sum(x => x.TotalEarned + (orderStats.GetValueOrDefault(x.Id)?.PendingSum ?? 0m)) ?? 0m;
+            var invitedNames = invitedList?.Select(x => x.Name).ToArray();
 
             return new PartnerResponse(
                 p.Id,
@@ -319,7 +332,13 @@ public sealed class ReferralService(
                 stats?.DeliveredOrders ?? 0,
                 stats?.TotalTurnover ?? 0m,
                 p.CardNumber,
-                p.CardHolderName);
+                p.CardHolderName,
+                inviter?.Name,
+                inviter?.ReferralCode,
+                invitedList?.Count ?? 0,
+                invitedNames,
+                invitedTurnover,
+                invitedEarned);
         }).ToArray();
     }
 
@@ -610,14 +629,29 @@ public sealed class ReferralService(
             }
         }
 
+        Guid? invitedByPartnerId = null;
+        if (!string.IsNullOrWhiteSpace(request.InvitedByReferralCode))
+        {
+            var inviter = await FindPartnerByCodeAsync(request.InvitedByReferralCode, cancellationToken);
+            if (inviter is not null && inviter.TelegramUserId != request.TelegramUserId)
+            {
+                invitedByPartnerId = inviter.Id;
+            }
+        }
+
+        var commission = request.CommissionPercent is > 0m and <= 100m
+            ? Math.Round(request.CommissionPercent.Value, 2, MidpointRounding.AwayFromZero)
+            : 3.0m;
+
         var partner = new Partner
         {
             Id = Guid.NewGuid(),
             TelegramUserId = request.TelegramUserId,
             Name = name,
             ReferralCode = code,
-            CommissionPercent = 5.0m,
+            CommissionPercent = commission,
             TotalEarned = 0m,
+            InvitedByPartnerId = invitedByPartnerId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -756,6 +790,11 @@ public sealed class ReferralService(
         if (!string.IsNullOrWhiteSpace(request.CardNumber) && cleanCard.Length != 16)
         {
             throw new ArgumentException("Номер банківської картки повинен містити 16 цифр.", nameof(request));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CardNumber) && !IsValidCardLuhn(cleanCard))
+        {
+            throw new ArgumentException("Некоректний номер банківської картки (перевірте правильність цифр).", nameof(request));
         }
 
         var ownsTransaction = dbContext.Database.CurrentTransaction is null;
@@ -1235,6 +1274,40 @@ public sealed class ReferralService(
             promo.IsActive,
             promo.CreatedByTelegramUserId,
             promo.CreatedAt);
+
+    public static bool IsValidCardLuhn(string? digits)
+    {
+        if (string.IsNullOrWhiteSpace(digits) || digits.Length != 16)
+        {
+            return false;
+        }
+
+        var sum = 0;
+        var alternate = false;
+        for (var i = digits.Length - 1; i >= 0; i--)
+        {
+            var ch = digits[i];
+            if (!char.IsDigit(ch))
+            {
+                return false;
+            }
+
+            var n = ch - '0';
+            if (alternate)
+            {
+                n *= 2;
+                if (n > 9)
+                {
+                    n -= 9;
+                }
+            }
+
+            sum += n;
+            alternate = !alternate;
+        }
+
+        return sum > 0 && sum % 10 == 0;
+    }
 
     private static string MaskCardNumber(string card)
     {

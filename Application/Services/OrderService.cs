@@ -547,6 +547,11 @@ public sealed class OrderService(
             order.OrderNumber,
             order.PublicId);
 
+        if (referralReward is not null)
+        {
+            _ = telegramBotClient.SendReferralRewardNotificationAsync(referralReward, CancellationToken.None);
+        }
+
         return new OrderPaymentConfirmationResponse(
             MapToResponse(order),
             referralReward,
@@ -566,7 +571,8 @@ public sealed class OrderService(
             var confirmRequest = new ConfirmOrderPaymentRequest
             {
                 PaymentProvider = request.PaymentProvider,
-                ExternalPaymentId = request.ExternalPaymentId
+                ExternalPaymentId = request.ExternalPaymentId,
+                Comment = request.Comment
             };
 
             return await ConfirmPaymentAsync(targetOrderId, confirmRequest, null, cancellationToken);
@@ -589,7 +595,7 @@ public sealed class OrderService(
         order.PaymentStatus = request.PaymentStatus;
         order.UpdatedAt = now;
 
-        ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, null, now);
+        ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, request.Comment, now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -676,10 +682,16 @@ public sealed class OrderService(
         if (!string.IsNullOrWhiteSpace(comment))
         {
             var trimmedComment = comment.Trim();
-            order.AdminComment = string.IsNullOrWhiteSpace(order.AdminComment)
-                ? trimmedComment
-                : $"{order.AdminComment}\n{trimmedComment}";
-            order.UpdatedAt = now;
+            if (string.IsNullOrWhiteSpace(order.AdminComment))
+            {
+                order.AdminComment = trimmedComment;
+                order.UpdatedAt = now;
+            }
+            else if (!order.AdminComment.Contains(trimmedComment, StringComparison.Ordinal))
+            {
+                order.AdminComment = $"{order.AdminComment}\n{trimmedComment}";
+                order.UpdatedAt = now;
+            }
         }
     }
 

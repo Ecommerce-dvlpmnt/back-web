@@ -168,9 +168,9 @@ public static class DbSeeder
         }
         await context.SaveChangesAsync(cancellationToken);
 
-        // Fetch existing YR- products
+        // Fetch existing JD- or YR- products
         var existingYrProducts = await context.Products
-            .Where(p => p.Sku.StartsWith("YR-"))
+            .Where(p => p.Sku.StartsWith("JD-") || p.Sku.StartsWith("YR-"))
             .ToListAsync(cancellationToken);
 
         // If any existing product has a null image, clean it up
@@ -214,7 +214,7 @@ public static class DbSeeder
         for (var i = 0; i < parsedItems.Count; i++)
         {
             var item = parsedItems[i];
-            var sku = $"YR-{(i + 1):D4}";
+            var sku = $"JD-{(i + 1):D4}";
 
             if (existingYrSkus.Contains(sku) || existingYrSlugs.Contains(item.Slug))
                 continue;

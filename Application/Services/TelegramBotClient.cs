@@ -381,24 +381,36 @@ public sealed class TelegramBotClient(
     {
         ArgumentNullException.ThrowIfNull(order);
 
-        var adminIds = TelegramBotMenu.GetAdminUserIds(configuration);
+        var adminIds = TelegramBotMenu.GetAdminOrderNotificationChatIds(configuration);
         if (adminIds.Count == 0)
         {
             return false;
         }
 
         var text = FormatAdminOrderMessage(order, isNewOrderNotification: true);
+        var inlineMarkup = CreateNewOrderAdminInlineMarkup(order.OrderNumber);
         var anySent = false;
 
         foreach (var adminId in adminIds)
         {
-            if (await SendMessageCoreAsync(adminId, Guid.Empty, text, null, cancellationToken))
+            if (await SendMessageCoreAsync(adminId, Guid.Empty, text, inlineMarkup, cancellationToken))
             {
                 anySent = true;
             }
         }
 
         return anySent;
+    }
+
+    public static TelegramInlineKeyboardMarkup CreateNewOrderAdminInlineMarkup(int orderNumber)
+    {
+        return new TelegramInlineKeyboardMarkup(
+        [
+            [
+                new TelegramInlineKeyboardButton("✅ Підтвердити", $"ord_confirm:{orderNumber}"),
+                new TelegramInlineKeyboardButton("❌ Скасувати", $"ord_reject:{orderNumber}")
+            ]
+        ]);
     }
 
     public async Task<bool> SendAdminPayoutRequestNotificationAsync(
@@ -538,10 +550,11 @@ public sealed class TelegramBotClient(
         object? replyMarkup,
         CancellationToken cancellationToken)
     {
-        if (telegramUserId <= 0)
+        if (telegramUserId == 0)
         {
             logger.LogWarning(
-                "Неможливо надіслати сповіщення в Telegram для партнера {PartnerId}: некоректний TelegramUserId.",
+                "Неможливо надіслати сповіщення в Telegram для чату {ChatId} (партнер {PartnerId}): некоректний ID.",
+                telegramUserId,
                 partnerId);
             return false;
         }
@@ -600,6 +613,143 @@ public sealed class TelegramBotClient(
         return baseUrl.EndsWith("/bot", StringComparison.OrdinalIgnoreCase)
             ? $"{baseUrl}{botToken}/{method}"
             : $"{baseUrl}/bot{botToken}/{method}";
+    }
+
+    public async Task<TelegramWebhookInfo?> GetWebhookInfoAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            logger.LogWarning("Telegram:BotToken не заданий. Отримання інформації про вебхук неможливе.");
+            return null;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.GetAsync(
+                BuildBotApiUri(botToken, "getWebhookInfo"),
+                timeoutCts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+                logger.LogWarning("Telegram getWebhookInfo повернув помилку {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return null;
+            }
+
+            var apiResponse = await response.Content.ReadFromJsonAsync<TelegramApiResponse<TelegramWebhookInfo>>(
+                cancellationToken: timeoutCts.Token);
+
+            return apiResponse is { Ok: true } ? apiResponse.Result : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Помилка виклику Telegram getWebhookInfo.");
+            return null;
+        }
+    }
+
+    public Task<bool> SetWebhookAsync(
+        string webhookUrl,
+        string? secretToken = null,
+        CancellationToken cancellationToken = default) =>
+        SetWebhookAsync(webhookUrl, secretToken, false, cancellationToken);
+
+    public async Task<bool> SetWebhookAsync(
+        string webhookUrl,
+        string? secretToken,
+        bool dropPendingUpdates,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(webhookUrl);
+
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            logger.LogWarning("Telegram:BotToken не заданий. Налаштування вебхука неможливе.");
+            return false;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            var payload = new Dictionary<string, object?>
+            {
+                ["url"] = webhookUrl.Trim(),
+                ["allowed_updates"] = new[] { "message", "callback_query" },
+                ["drop_pending_updates"] = dropPendingUpdates
+            };
+
+            if (!string.IsNullOrWhiteSpace(secretToken))
+            {
+                payload["secret_token"] = secretToken.Trim();
+            }
+
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "setWebhook"),
+                payload,
+                timeoutCts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+                logger.LogWarning("Telegram setWebhook повернув помилку {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return false;
+            }
+
+            logger.LogInformation("Telegram webhook успішно встановлено на {WebhookUrl}.", webhookUrl);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Помилка виклику Telegram setWebhook.");
+            return false;
+        }
+    }
+
+    public Task<bool> DeleteWebhookAsync(
+        CancellationToken cancellationToken = default) =>
+        DeleteWebhookAsync(false, cancellationToken);
+
+    public async Task<bool> DeleteWebhookAsync(
+        bool dropPendingUpdates,
+        CancellationToken cancellationToken = default)
+    {
+        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        if (string.IsNullOrWhiteSpace(botToken))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(FastApiRequestTimeout);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            var payload = new { drop_pending_updates = dropPendingUpdates };
+
+            using var response = await client.PostAsJsonAsync(
+                BuildBotApiUri(botToken, "deleteWebhook"),
+                payload,
+                timeoutCts.Token);
+
+            logger.LogInformation("Telegram webhook видалено (перехід на Long Polling).");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Помилка виклику Telegram deleteWebhook.");
+            return false;
+        }
     }
 
     private sealed record TelegramSendMessageRequest(
