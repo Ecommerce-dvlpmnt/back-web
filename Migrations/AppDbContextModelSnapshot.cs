@@ -771,6 +771,10 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("CreatedAt")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
+                    b.Property<Guid?>("InvitedByPartnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("InvitedByPartnerId");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -795,6 +799,9 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("TotalEarned");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("InvitedByPartnerId")
+                        .HasDatabaseName("IX_Referrals_InvitedByPartnerId");
 
                     b.HasIndex("ReferralCode")
                         .IsUnique()
