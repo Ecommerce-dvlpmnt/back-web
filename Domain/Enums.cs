@@ -22,8 +22,9 @@ public enum PaymentStatus
 
 public enum PaymentMethod
 {
-    CashOnDelivery,
-    Online
+    CashOnDelivery = 0, // Оплата при отриманні
+    Iban = 1,           // Оплата за реквізитами IBAN
+    Online = 2          // Оплата карткою онлайн (plata by mono)
 }
 
 public enum ShipmentStatus
