@@ -18,12 +18,15 @@ public sealed class TelegramBotClient(
     public const string HttpClientName = "TelegramBot";
     private static readonly TimeSpan FastApiRequestTimeout = TimeSpan.FromSeconds(10);
 
+    private string? GetBotToken() =>
+        (configuration["Telegram:BotToken"] ?? configuration["TELEGRAM_BOT_TOKEN"])?.Trim();
+
     public async Task<IReadOnlyList<TelegramUpdate>> GetUpdatesAsync(
         long offset,
         int timeoutSeconds = 30,
         CancellationToken cancellationToken = default)
     {
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             logger.LogWarning("Telegram:BotToken не заданий. Отримання оновлень неможливе.");
@@ -98,7 +101,7 @@ public sealed class TelegramBotClient(
     {
         ArgumentNullException.ThrowIfNull(commands);
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             logger.LogWarning("Telegram:BotToken не заданий. Налаштування меню неможливе.");
@@ -255,7 +258,7 @@ public sealed class TelegramBotClient(
         TelegramInlineKeyboardMarkup? inlineMarkup = null,
         CancellationToken cancellationToken = default)
     {
-        if (chatId <= 0)
+        if (chatId == 0)
         {
             return false;
         }
@@ -265,7 +268,7 @@ public sealed class TelegramBotClient(
             return await SendMessageCoreAsync(chatId, Guid.Empty, text, inlineMarkup, cancellationToken);
         }
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             return false;
@@ -305,7 +308,7 @@ public sealed class TelegramBotClient(
             return false;
         }
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             return false;
@@ -340,12 +343,12 @@ public sealed class TelegramBotClient(
         long messageId,
         CancellationToken cancellationToken = default)
     {
-        if (chatId <= 0 || messageId <= 0)
+        if (chatId == 0 || messageId <= 0)
         {
             return false;
         }
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             return false;
@@ -443,7 +446,11 @@ public sealed class TelegramBotClient(
     public static string FormatAdminOrderMessage(AdminBotOrderNotificationDto order, bool isNewOrderNotification = false)
     {
         var builder = new StringBuilder();
-        var headerPrefix = isNewOrderNotification ? "🛍 <b>Нове замовлення" : "📦 <b>Замовлення";
+        var headerPrefix = isNewOrderNotification
+            ? (order.PaymentMethod == PaymentMethod.Online && order.PaymentStatus == PaymentStatus.Paid
+                ? "🛍✅ <b>Нове оплачене замовлення"
+                : "🛍 <b>Нове замовлення")
+            : "📦 <b>Замовлення";
         builder.AppendLine($"{headerPrefix} #{order.OrderNumber}</b> (<code>{WebUtility.HtmlEncode(order.PublicId)}</code>)");
         builder.AppendLine($"👤 Клієнт: <b>{WebUtility.HtmlEncode(order.CustomerFullName)}</b>");
         builder.AppendLine($"📞 Телефон: <code>{WebUtility.HtmlEncode(order.CustomerPhone)}</code>");
@@ -457,6 +464,8 @@ public sealed class TelegramBotClient(
                     .Select(s => WebUtility.HtmlEncode(s!.Trim())));
             builder.AppendLine($"📍 Доставка: {delivery}");
         }
+
+        builder.AppendLine($"💳 Оплата: {FormatOrderPaymentStatus(order.PaymentMethod, order.PaymentStatus)}");
 
         builder.AppendLine();
         builder.AppendLine("📋 <b>Позиції:</b>");
@@ -515,6 +524,18 @@ public sealed class TelegramBotClient(
         return builder.ToString();
     }
 
+    public static string FormatOrderPaymentStatus(PaymentMethod paymentMethod, PaymentStatus paymentStatus) =>
+        (paymentMethod, paymentStatus) switch
+        {
+            (PaymentMethod.Online, PaymentStatus.Paid) => "<b>✅ Оплачено онлайн (Monobank)</b>",
+            (PaymentMethod.Online, PaymentStatus.Pending) => "<b>⏳ Онлайн (Monobank) — очікує оплати</b>",
+            (PaymentMethod.Online, PaymentStatus.Failed) => "<b>❌ Онлайн (Monobank) — помилка оплати</b>",
+            (PaymentMethod.Online, PaymentStatus.Refunded) => "<b>↩️ Онлайн (Monobank) — повернення коштів</b>",
+            (PaymentMethod.CashOnDelivery, PaymentStatus.Paid) => "<b>✅ Оплачено (накладений платіж)</b>",
+            (PaymentMethod.CashOnDelivery, PaymentStatus.Refunded) => "<b>↩️ Повернення коштів</b>",
+            _ => "<b>💵 Накладений платіж (при отриманні)</b>"
+        };
+
     public static string FormatAdminPayoutRequestMessage(AdminPayoutResponse payout)
     {
         var holderLine = !string.IsNullOrWhiteSpace(payout.CardHolderName)
@@ -559,7 +580,7 @@ public sealed class TelegramBotClient(
             return false;
         }
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             logger.LogWarning(
@@ -581,10 +602,13 @@ public sealed class TelegramBotClient(
 
             if (!response.IsSuccessStatusCode)
             {
+                var errorBody = await response.Content.ReadAsStringAsync(timeoutCts.Token);
                 logger.LogWarning(
-                    "Telegram Bot API повернув статус {StatusCode} при відправці сповіщення партнеру {PartnerId}.",
+                    "Telegram Bot API повернув статус {StatusCode} при відправці сповіщення у чат {ChatId} (партнер {PartnerId}): {Body}",
                     (int)response.StatusCode,
-                    partnerId);
+                    telegramUserId,
+                    partnerId,
+                    errorBody);
                 return false;
             }
 
@@ -618,7 +642,7 @@ public sealed class TelegramBotClient(
     public async Task<TelegramWebhookInfo?> GetWebhookInfoAsync(
         CancellationToken cancellationToken = default)
     {
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             logger.LogWarning("Telegram:BotToken не заданий. Отримання інформації про вебхук неможливе.");
@@ -668,7 +692,7 @@ public sealed class TelegramBotClient(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(webhookUrl);
 
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             logger.LogWarning("Telegram:BotToken не заданий. Налаштування вебхука неможливе.");
@@ -723,7 +747,7 @@ public sealed class TelegramBotClient(
         bool dropPendingUpdates,
         CancellationToken cancellationToken = default)
     {
-        var botToken = configuration["Telegram:BotToken"]?.Trim();
+        var botToken = GetBotToken();
         if (string.IsNullOrWhiteSpace(botToken))
         {
             return false;

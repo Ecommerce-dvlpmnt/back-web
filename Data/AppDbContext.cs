@@ -342,10 +342,10 @@ public class AppDbContext : DbContext
         e.Property(x => x.DeliveryCityName).HasColumnName("DeliveryCityName").HasMaxLength(150);
         e.Property(x => x.DeliveryWarehouseRef).HasColumnName("DeliveryWarehouseRef").HasMaxLength(50);
         e.Property(x => x.DeliveryWarehouseName).HasColumnName("DeliveryWarehouseName").HasMaxLength(250);
-        e.Property(x => x.PaymentMethod).HasColumnName("PaymentMethod").HasColumnType("payment_method").HasDefaultValueSql("'CashOnDelivery'");
+        e.Property(x => x.PaymentMethod).HasColumnName("PaymentMethod").HasColumnType("payment_method").HasDefaultValueSql("'CashOnDelivery'").HasSentinel((PaymentMethod)(-1));
         e.Property(x => x.PaymentProvider).HasColumnName("PaymentProvider").HasMaxLength(20);
-        e.Property(x => x.PaymentStatus).HasColumnName("PaymentStatus").HasColumnType("payment_status").HasDefaultValueSql("'Pending'");
-        e.Property(x => x.OrderStatus).HasColumnName("OrderStatus").HasColumnType("order_status").HasDefaultValueSql("'New'");
+        e.Property(x => x.PaymentStatus).HasColumnName("PaymentStatus").HasColumnType("payment_status").HasDefaultValueSql("'Pending'").HasSentinel((PaymentStatus)(-1));
+        e.Property(x => x.OrderStatus).HasColumnName("OrderStatus").HasColumnType("order_status").HasDefaultValueSql("'New'").HasSentinel((OrderStatus)(-1));
         e.Property(x => x.ExternalPaymentId).HasColumnName("ExternalPaymentId").HasMaxLength(100);
         e.Property(x => x.TotalPrice).HasColumnName("TotalPrice").HasPrecision(10, 2).IsRequired();
         e.Property(x => x.TotalProfit).HasColumnName("TotalProfit").HasPrecision(10, 2).IsRequired();
@@ -441,7 +441,7 @@ public class AppDbContext : DbContext
         e.Property(x => x.SupplierId).HasColumnName("SupplierId");
         e.Property(x => x.SupplierOrderRef).HasColumnName("SupplierOrderRef").HasMaxLength(100);
         e.Property(x => x.TrackingNumber).HasColumnName("TrackingNumber").HasMaxLength(20);
-        e.Property(x => x.Status).HasColumnName("Status").HasColumnType("shipment_status").HasDefaultValueSql("'Pending'");
+        e.Property(x => x.Status).HasColumnName("Status").HasColumnType("shipment_status").HasDefaultValueSql("'Pending'").HasSentinel((ShipmentStatus)(-1));
         e.Property(x => x.AdminComment).HasColumnName("AdminComment");
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
@@ -573,7 +573,7 @@ public class AppDbContext : DbContext
         e.Property(x => x.Comment).HasColumnName("Comment").IsRequired();
         e.Property(x => x.Pros).HasColumnName("Pros").HasMaxLength(500);
         e.Property(x => x.Cons).HasColumnName("Cons").HasMaxLength(500);
-        e.Property(x => x.Status).HasColumnName("Status").HasColumnType("review_status").HasDefaultValueSql("'Pending'");
+        e.Property(x => x.Status).HasColumnName("Status").HasColumnType("review_status").HasDefaultValueSql("'Pending'").HasSentinel((ReviewStatus)(-1));
         e.Property(x => x.AdminComment).HasColumnName("AdminComment").HasMaxLength(1000);
         e.Property(x => x.CreatedAt).HasColumnName("CreatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");
         e.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt").HasColumnType("timestamptz").HasDefaultValueSql("CURRENT_TIMESTAMP");

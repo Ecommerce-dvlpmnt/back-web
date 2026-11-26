@@ -668,7 +668,8 @@ public sealed class TelegramBotCommandHandler(
                     ? order.CustomerFullName[..16] + "…"
                     : order.CustomerFullName;
 
-            var buttonLabel = $"{FormatOrderStatusEmoji(order.OrderStatus)} #{order.OrderNumber} • {customerShort} • {Money(order.TotalPrice)} грн{badge}";
+            var payBadge = FormatPaymentStatusBadge(order.PaymentMethod, order.PaymentStatus);
+            var buttonLabel = $"{FormatOrderStatusEmoji(order.OrderStatus)} {payBadge} #{order.OrderNumber} • {customerShort} • {Money(order.TotalPrice)} грн{badge}";
             rows.Add(
             [
                 new TelegramInlineKeyboardButton(
@@ -1620,6 +1621,16 @@ public sealed class TelegramBotCommandHandler(
             _ => "•"
         };
     }
+
+    private static string FormatPaymentStatusBadge(PaymentMethod method, PaymentStatus paymentStatus) =>
+        (method, paymentStatus) switch
+        {
+            (_, PaymentStatus.Paid) => "💳✅",
+            (PaymentMethod.Online, PaymentStatus.Failed) => "💳❌",
+            (_, PaymentStatus.Refunded) => "💳↩️",
+            (PaymentMethod.Online, _) => "⏳💳",
+            _ => "💵"
+        };
 
     private static string FormatOrderStatus(OrderStatus status)
     {

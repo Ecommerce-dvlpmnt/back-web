@@ -1262,7 +1262,8 @@ public sealed class ReferralService(
                     i.Quantity,
                     i.UnitPrice,
                     i.UnitPrice * i.Quantity))
-                .ToArray());
+                .ToArray(),
+            o.PaymentStatus);
 
     private static PromoCodeResponse MapToPromoCodeResponse(PromoCode promo) =>
         new(

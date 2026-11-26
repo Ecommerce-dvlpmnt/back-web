@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Referrals;
 using EcommerceBackend.Application.Services;
+using EcommerceBackend.Domain.Enums;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -287,6 +288,58 @@ public sealed class TelegramBotClientTests
             new StubHttpClientFactory(handler),
             configuration,
             NullLogger<TelegramBotClient>.Instance);
+    }
+
+    [Fact]
+    public void FormatAdminOrderMessage_IncludesPaidOnlineHeaderAndPaymentStatus()
+    {
+        var dto = new AdminBotOrderNotificationDto(
+            Guid.NewGuid(),
+            29,
+            "pub_29",
+            "Данііл Мєдвєдєв",
+            "+380991112233",
+            "Київ",
+            "Відділення №1",
+            PaymentMethod.Online,
+            OrderStatus.New,
+            2430m,
+            0m,
+            null,
+            null,
+            null,
+            null,
+            0m,
+            DateTime.UtcNow,
+            [new AdminBotOrderItemDto("Ялинка лита 1.8м", 1, 2430m, 2430m)],
+            PaymentStatus.Paid);
+
+        var formatted = TelegramBotClient.FormatAdminOrderMessage(dto, isNewOrderNotification: true);
+
+        Assert.Contains("Нове оплачене замовлення #29", formatted);
+        Assert.Contains("Оплачено онлайн (Monobank)", formatted);
+    }
+
+    [Fact]
+    public async Task EditMessageTextAsync_AllowsNegativeGroupChatId()
+    {
+        var handler = new RecordingHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json")
+            });
+        var client = CreateClient(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["Telegram:BaseUrl"] = "https://api.telegram.org",
+                ["TELEGRAM_BOT_TOKEN"] = "123456:ABC-EnvToken"
+            });
+
+        var edited = await client.EditMessageTextAsync(-1001234567890L, 55, "Updated");
+
+        Assert.True(edited);
+        Assert.Equal("https://api.telegram.org/bot123456:ABC-EnvToken/editMessageText", handler.LastRequestUri?.ToString());
     }
 
     private static ReferralRewardResult CreateSampleReward()
