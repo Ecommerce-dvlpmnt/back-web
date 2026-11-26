@@ -581,6 +581,12 @@ public sealed class SeoService(
             var parts = new List<string>();
             foreach (var prop in doc.RootElement.EnumerateObject())
             {
+                if (string.Equals(prop.Name, "is_recommended", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(prop.Name, "show_on_homepage", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var rawValue = prop.Value.ValueKind switch
                 {
                     JsonValueKind.String => prop.Value.GetString(),

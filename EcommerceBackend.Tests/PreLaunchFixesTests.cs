@@ -134,6 +134,28 @@ public sealed class PreLaunchFixesTests
         Assert.True(expiredReq.CancelOrderOnFailure);
     }
 
+    [Fact]
+    public void PublicProductQueryParameters_AndDto_ExposeRecommendedAndHomepageFlags()
+    {
+        var query = new EcommerceBackend.Application.DTOs.Products.PublicProductQueryParameters
+        {
+            IsRecommended = true,
+            ShowOnHomepage = true,
+            InStockOnly = true
+        };
+        Assert.True(query.IsRecommended);
+        Assert.True(query.ShowOnHomepage);
+        Assert.True(query.InStockOnly);
+
+        var dto = new EcommerceBackend.Application.DTOs.Products.PublicProductDto
+        {
+            IsRecommended = true,
+            ShowOnHomepage = false
+        };
+        Assert.True(dto.IsRecommended);
+        Assert.False(dto.ShowOnHomepage);
+    }
+
     private static IConfiguration BuildR2Config() =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

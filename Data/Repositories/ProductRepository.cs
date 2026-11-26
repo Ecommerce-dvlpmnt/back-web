@@ -38,9 +38,22 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
             products = products.Where(product => product.Price >= query.MinPrice.Value);
         if (query.MaxPrice.HasValue)
             products = products.Where(product => product.Price <= query.MaxPrice.Value);
-        if (query.InStock == true)
+        if (query.InStock == true || query.InStockOnly == true)
             products = products.Where(product => product.Stock > 0);
 
+        if (query.IsRecommended.HasValue)
+        {
+            products = query.IsRecommended.Value
+                ? products.Where(product => product.Attributes != null && EF.Functions.JsonContains(product.Attributes, "{\"is_recommended\":true}"))
+                : products.Where(product => product.Attributes == null || !EF.Functions.JsonContains(product.Attributes, "{\"is_recommended\":true}"));
+        }
+
+        if (query.ShowOnHomepage.HasValue)
+        {
+            products = query.ShowOnHomepage.Value
+                ? products.Where(product => product.Attributes != null && EF.Functions.JsonContains(product.Attributes, "{\"show_on_homepage\":true}"))
+                : products.Where(product => product.Attributes == null || !EF.Functions.JsonContains(product.Attributes, "{\"show_on_homepage\":true}"));
+        }
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var search = query.Search.Trim();
