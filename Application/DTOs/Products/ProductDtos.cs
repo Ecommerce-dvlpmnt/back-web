@@ -42,6 +42,8 @@ public sealed class PublicProductDto
     public decimal? AverageRating { get; set; }
     public int ReviewCount { get; set; }
     public bool IsActive { get; set; }
+    public bool IsRecommended { get; set; }
+    public bool ShowOnHomepage { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ProductImageDto> Images { get; set; } = [];
@@ -70,6 +72,8 @@ public sealed class ProductDto
     public decimal? AverageRating { get; set; }
     public int ReviewCount { get; set; }
     public bool IsActive { get; set; }
+    public bool IsRecommended { get; set; }
+    public bool ShowOnHomepage { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ProductImageDto> Images { get; set; } = [];
@@ -122,6 +126,8 @@ public class CreateProductDto : IValidatableObject
     public decimal? WeightKg { get; set; }
 
     public bool IsActive { get; set; } = true;
+    public bool? IsRecommended { get; set; }
+    public bool? ShowOnHomepage { get; set; }
     public List<CreateProductImageDto>? Images { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -161,6 +167,9 @@ public sealed class PublicProductQueryParameters
     public bool Summary { get; set; }
     public Guid? CategoryId { get; set; }
     public string? Search { get; set; }
+    public bool? IsRecommended { get; set; }
+    public bool? ShowOnHomepage { get; set; }
+    public bool? InStockOnly { get; set; }
     public string? SortBy { get; set; } = "date_desc";
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
@@ -176,6 +185,9 @@ public sealed class ProductQueryParameters
     public Guid? SupplierId { get; set; }
     public string? Search { get; set; }
     public bool? OnlyActive { get; set; }
+    public bool? IsRecommended { get; set; }
+    public bool? ShowOnHomepage { get; set; }
+    public bool? InStockOnly { get; set; }
     public string? SortBy { get; set; } = "date_desc";
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }

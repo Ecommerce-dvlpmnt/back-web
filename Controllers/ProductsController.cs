@@ -23,6 +23,9 @@ public sealed class ProductsController(IProductService productService) : Control
             CategoryId = query.CategoryId,
             CategoryIds = query.CategoryIds,
             Search = query.Search,
+            IsRecommended = query.IsRecommended,
+            ShowOnHomepage = query.ShowOnHomepage,
+            InStockOnly = query.InStockOnly,
             SortBy = query.SortBy,
             MinPrice = query.MinPrice,
             MaxPrice = query.MaxPrice,
@@ -31,6 +34,48 @@ public sealed class ProductsController(IProductService productService) : Control
             PageSize = query.PageSize,
             Summary = query.Summary,
             OnlyActive = true
+        };
+        return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));
+    }
+
+    /// <summary>Рекомендовані активні товари в наявності для блоку «Рекомендуємо».</summary>
+    [HttpGet("recommended")]
+    [ProducesResponseType(typeof(PagedResult<PublicProductDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResult<PublicProductDto>>> GetRecommended(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 24,
+        [FromQuery] string? sortBy = "date_desc",
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = new ProductQueryParameters
+        {
+            OnlyActive = true,
+            IsRecommended = true,
+            InStockOnly = true,
+            SortBy = sortBy,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+        return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));
+    }
+
+    /// <summary>Товари для головної сторінки (showOnHomepage = true) в наявності.</summary>
+    [HttpGet("homepage")]
+    [ProducesResponseType(typeof(PagedResult<PublicProductDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResult<PublicProductDto>>> GetHomepage(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 24,
+        [FromQuery] string? sortBy = "date_desc",
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = new ProductQueryParameters
+        {
+            OnlyActive = true,
+            ShowOnHomepage = true,
+            InStockOnly = true,
+            SortBy = sortBy,
+            PageNumber = pageNumber,
+            PageSize = pageSize
         };
         return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));
     }

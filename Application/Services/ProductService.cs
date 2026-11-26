@@ -93,7 +93,7 @@ public sealed class ProductService(
             OldPrice = request.OldPrice,
             Stock = request.Stock,
             MainImageUrl = request.MainImageUrl,
-            Attributes = NormalizeAttributes(request.Attributes),
+            Attributes = NormalizeAttributes(request.Attributes, request.IsRecommended, request.ShowOnHomepage),
             MetaTitle = request.MetaTitle,
             MetaDescription = request.MetaDescription,
             WeightKg = request.WeightKg,
@@ -131,7 +131,7 @@ public sealed class ProductService(
         product.OldPrice = request.OldPrice;
         product.Stock = request.Stock;
         product.MainImageUrl = request.MainImageUrl;
-        product.Attributes = NormalizeAttributes(request.Attributes);
+        product.Attributes = NormalizeAttributes(request.Attributes, request.IsRecommended, request.ShowOnHomepage);
         product.MetaTitle = request.MetaTitle;
         product.MetaDescription = request.MetaDescription;
         product.WeightKg = request.WeightKg;
@@ -363,19 +363,85 @@ public sealed class ProductService(
             throw new InvalidOperationException("Товар з таким артикулом (SKU) або slug вже існує.");
     }
 
-    private static string NormalizeAttributes(string? attributes)
+    private static string NormalizeAttributes(
+        string? attributes,
+        bool? isRecommended = null,
+        bool? showOnHomepage = null)
     {
+        System.Text.Json.Nodes.JsonObject root;
         if (string.IsNullOrWhiteSpace(attributes))
-            return "{}";
+        {
+            root = new System.Text.Json.Nodes.JsonObject();
+        }
+        else
+        {
+            try
+            {
+                var parsed = System.Text.Json.Nodes.JsonNode.Parse(attributes);
+                if (parsed is System.Text.Json.Nodes.JsonObject obj)
+                {
+                    root = obj;
+                }
+                else if (isRecommended is null && showOnHomepage is null)
+                {
+                    return attributes;
+                }
+                else
+                {
+                    throw new ArgumentException("Атрибути повинні містити JSON-об'єкт.", nameof(attributes));
+                }
+            }
+            catch (JsonException exception)
+            {
+                throw new ArgumentException("Атрибути повинні містити валідний JSON.", nameof(attributes), exception);
+            }
+        }
+
+        if (isRecommended.HasValue)
+        {
+            if (isRecommended.Value)
+                root["is_recommended"] = true;
+            else
+                root.Remove("is_recommended");
+        }
+
+        if (showOnHomepage.HasValue)
+        {
+            if (showOnHomepage.Value)
+                root["show_on_homepage"] = true;
+            else
+                root.Remove("show_on_homepage");
+        }
+
+        return isRecommended.HasValue || showOnHomepage.HasValue || string.IsNullOrWhiteSpace(attributes)
+            ? root.ToJsonString()
+            : attributes;
+    }
+
+    private static bool ReadAttributeFlag(string? attributesJson, string key)
+    {
+        if (string.IsNullOrWhiteSpace(attributesJson))
+            return false;
 
         try
         {
-            using var _ = JsonDocument.Parse(attributes);
-            return attributes;
+            using var doc = JsonDocument.Parse(attributesJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            if (!doc.RootElement.TryGetProperty(key, out var prop))
+                return false;
+
+            return prop.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.String => string.Equals(prop.GetString(), "true", StringComparison.OrdinalIgnoreCase),
+                _ => false
+            };
         }
-        catch (JsonException exception)
+        catch (JsonException)
         {
-            throw new ArgumentException("Атрибути повинні містити валідний JSON.", nameof(attributes), exception);
+            return false;
         }
     }
 
@@ -414,6 +480,8 @@ public sealed class ProductService(
             AverageRating = averageRating,
             ReviewCount = reviewCount,
             IsActive = product.IsActive,
+            IsRecommended = ReadAttributeFlag(product.Attributes, "is_recommended"),
+            ShowOnHomepage = ReadAttributeFlag(product.Attributes, "show_on_homepage"),
             CreatedAt = product.CreatedAt,
             UpdatedAt = product.UpdatedAt,
             Images = product.Images
@@ -458,6 +526,8 @@ public sealed class ProductService(
             AverageRating = averageRating,
             ReviewCount = reviewCount,
             IsActive = product.IsActive,
+            IsRecommended = ReadAttributeFlag(product.Attributes, "is_recommended"),
+            ShowOnHomepage = ReadAttributeFlag(product.Attributes, "show_on_homepage"),
             CreatedAt = product.CreatedAt,
             UpdatedAt = product.UpdatedAt,
             Images = product.Images
