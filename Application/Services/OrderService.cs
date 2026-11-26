@@ -618,17 +618,42 @@ public sealed class OrderService(
             return await ConfirmPaymentAsync(targetOrderId, confirmRequest, null, cancellationToken);
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var isRelational = dbContext.Database.IsRelational();
+        await using var transaction = isRelational
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
-        var order = await dbContext.Orders
-            .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {targetOrderId} FOR UPDATE")
-            .Include(o => o.Items)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KeyNotFoundException($"Замовлення з ID '{targetOrderId}' не знайдено.");
+        var order = isRelational
+            ? await dbContext.Orders
+                .FromSqlInterpolated($"SELECT * FROM \"Orders\" WHERE \"Id\" = {targetOrderId} FOR UPDATE")
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(cancellationToken)
+            : await dbContext.Orders
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.Id == targetOrderId, cancellationToken);
+
+        if (order is null)
+        {
+            throw new KeyNotFoundException($"Замовлення з ID '{targetOrderId}' не знайдено.");
+        }
 
         if (order.PaymentStatus == PaymentStatus.Paid && request.PaymentStatus == PaymentStatus.Failed)
         {
+            if (request.CancelOrderOnFailure)
+            {
+                return new OrderPaymentConfirmationResponse(MapToResponse(order), null, false);
+            }
+
             throw new InvalidOperationException("Не можна змінити статус вже оплаченого замовлення на Failed.");
+        }
+
+        // Якщо клієнт вже створив новий інвойс, ігноруємо запізнілий expired від старого інвойсу
+        if (request.CancelOrderOnFailure
+            && !string.IsNullOrWhiteSpace(order.ExternalPaymentId)
+            && !string.IsNullOrWhiteSpace(request.ExternalPaymentId)
+            && !string.Equals(order.ExternalPaymentId, request.ExternalPaymentId.Trim(), StringComparison.Ordinal))
+        {
+            return new OrderPaymentConfirmationResponse(MapToResponse(order), null, false);
         }
 
         var now = DateTime.UtcNow;
@@ -637,22 +662,77 @@ public sealed class OrderService(
 
         ApplyPaymentMetadata(order, request.PaymentProvider, request.ExternalPaymentId, request.Comment, now);
 
+        var autoCancelledOnExpire = false;
+        if (request.CancelOrderOnFailure
+            && request.PaymentStatus == PaymentStatus.Failed
+            && order.OrderStatus == OrderStatus.New)
+        {
+            var oldStatus = order.OrderStatus;
+            await ReturnStockAsync(order, now, cancellationToken);
+
+            if (order.PromoCodeId.HasValue)
+            {
+                var promo = isRelational
+                    ? await dbContext.PromoCodes
+                        .FromSqlInterpolated($"SELECT * FROM \"PromoCodes\" WHERE \"Id\" = {order.PromoCodeId.Value} FOR UPDATE")
+                        .FirstOrDefaultAsync(cancellationToken)
+                    : await dbContext.PromoCodes
+                        .FirstOrDefaultAsync(p => p.Id == order.PromoCodeId.Value, cancellationToken);
+
+                if (promo is not null && promo.UsedCount > 0)
+                {
+                    promo.UsedCount -= 1;
+                    if (!promo.MaxUses.HasValue || promo.MaxUses.Value <= 0 || promo.UsedCount < promo.MaxUses.Value)
+                    {
+                        promo.IsActive = true;
+                    }
+                }
+            }
+
+            order.OrderStatus = OrderStatus.Cancelled;
+            order.UpdatedAt = now;
+            autoCancelledOnExpire = true;
+
+            dbContext.OrderStatusHistory.Add(new OrderStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                OrderId = order.Id,
+                OldStatus = oldStatus,
+                NewStatus = OrderStatus.Cancelled,
+                ChangedByAdminId = null,
+                Comment = "Автоматично скасовано: минув час оплати рахунку Monobank",
+                CreatedAt = now
+            });
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         ReferralRewardResult? cancelledReward = null;
-        if (request.PaymentStatus == PaymentStatus.Refunded)
+        if (request.PaymentStatus == PaymentStatus.Refunded || autoCancelledOnExpire)
         {
             cancelledReward = await referralService.ProcessCancelledOrderRewardAsync(order.Id, cancellationToken);
         }
 
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        if (autoCancelledOnExpire)
+        {
+            logger?.LogInformation(
+                "Замовлення #{OrderNumber} (PublicId: {PublicId}) автоматично скасовано через закінчення дії рахунку Monobank. Товари повернено на склад.",
+                order.OrderNumber,
+                order.PublicId);
+        }
 
         var telegramNotificationSent = false;
         if (cancelledReward is not null)
         {
+            var cancelReason = autoCancelledOnExpire ? "минув час онлайн-оплати" : "повернення коштів";
             telegramNotificationSent = await telegramBotClient.SendReferralRewardCancelledNotificationAsync(
                 cancelledReward,
-                "повернення коштів",
+                cancelReason,
                 cancellationToken);
         }
 
@@ -741,10 +821,14 @@ public sealed class OrderService(
         CancellationToken cancellationToken)
     {
         var productIds = order.Items.Select(i => i.ProductId).Distinct().Order().ToArray();
-        var products = await dbContext.Products
-            .FromSqlInterpolated(
-                $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
-            .ToDictionaryAsync(p => p.Id, cancellationToken);
+        var products = dbContext.Database.IsRelational()
+            ? await dbContext.Products
+                .FromSqlInterpolated(
+                    $"SELECT * FROM \"Products\" WHERE \"Id\" = ANY ({productIds}) ORDER BY \"Id\" FOR UPDATE")
+                .ToDictionaryAsync(p => p.Id, cancellationToken)
+            : await dbContext.Products
+                .Where(p => productIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, cancellationToken);
 
         foreach (var item in order.Items)
         {

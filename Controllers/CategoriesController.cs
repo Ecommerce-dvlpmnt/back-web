@@ -1,5 +1,6 @@
 using EcommerceBackend.Application.DTOs.Categories;
 using EcommerceBackend.Application.Interfaces;
+using EcommerceBackend.Application.Services;
 using EcommerceBackend.Middleware;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,7 +19,8 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
         [FromQuery] bool? onlyActive,
         CancellationToken cancellationToken)
     {
-        return Ok(await categoryService.GetAllAsync(onlyActive ?? true, cancellationToken));
+        var categories = await categoryService.GetAllAsync(onlyActive ?? true, cancellationToken);
+        return Ok(categories.Select(WithPublicSeoFallbacks).ToList());
     }
 
     /// <summary>Отримати категорію за ID.</summary>
@@ -28,7 +30,7 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     public async Task<ActionResult<CategoryDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var category = await categoryService.GetByIdAsync(id, cancellationToken);
-        return category is null ? NotFound() : Ok(category);
+        return category is null ? NotFound() : Ok(WithPublicSeoFallbacks(category));
     }
 
     /// <summary>Отримати категорію за унікальним слагом (URL).</summary>
@@ -38,6 +40,13 @@ public sealed class CategoriesController(ICategoryService categoryService) : Con
     public async Task<ActionResult<CategoryDto>> GetBySlug(string slug, CancellationToken cancellationToken)
     {
         var category = await categoryService.GetBySlugAsync(slug, cancellationToken);
-        return category is null ? NotFound() : Ok(category);
+        return category is null ? NotFound() : Ok(WithPublicSeoFallbacks(category));
+    }
+
+    private static CategoryDto WithPublicSeoFallbacks(CategoryDto dto)
+    {
+        dto.MetaTitle = SeoMetaBuilder.BuildCategoryMetaTitle(dto.Name, dto.MetaTitle);
+        dto.MetaDescription = SeoMetaBuilder.BuildCategoryMetaDescription(dto.Name, dto.MetaDescription);
+        return dto;
     }
 }

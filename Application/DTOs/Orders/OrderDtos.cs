@@ -201,6 +201,12 @@ public sealed record PaymentWebhookRequest
     [Required]
     public PaymentStatus PaymentStatus { get; init; } = PaymentStatus.Paid;
 
+    /// <summary>
+    /// Якщо true і платіж перейшов у Failed (наприклад, інвойс Monobank прострочено — expired),
+    /// неоплачене замовлення у статусі New автоматично скасовується з поверненням товару на склад.
+    /// </summary>
+    public bool CancelOrderOnFailure { get; init; }
+
     [StringLength(500)]
     public string? Comment { get; init; }
 }

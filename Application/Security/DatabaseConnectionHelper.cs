@@ -35,6 +35,16 @@ public static class DatabaseConnectionHelper
             return ConvertPostgresUriToConnectionString(connectionString);
         }
 
+        if (!connectionString.Contains("GssEncryptionMode", StringComparison.OrdinalIgnoreCase) &&
+            !connectionString.Contains("GSS Encryption Mode", StringComparison.OrdinalIgnoreCase))
+        {
+            var csBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+            {
+                GssEncryptionMode = GssEncryptionMode.Disable
+            };
+            return csBuilder.ConnectionString;
+        }
+
         return connectionString;
     }
 
@@ -80,6 +90,7 @@ public static class DatabaseConnectionHelper
             Username = username,
             Password = password,
             SslMode = sslMode,
+            GssEncryptionMode = GssEncryptionMode.Disable,
             Pooling = true
         };
 

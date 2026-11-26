@@ -38,6 +38,32 @@ public sealed class PaymentsController(
         return Ok(invoice);
     }
 
+    /// <summary>Повертає квадратну 1:1 мініатюру товару (256×256) для сторінки оплати Monobank без білих полів збоку.</summary>
+    [HttpGet("monobank/item-icon/{productId:guid}.jpg")]
+    [Produces("image/jpeg")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMonobankItemIcon(
+        Guid productId,
+        [FromServices] IMonobankIconService iconService,
+        CancellationToken cancellationToken)
+    {
+        var result = await iconService.GetSquareProductIconAsync(productId, cancellationToken);
+        if (result.ImageBytes is { Length: > 0 })
+        {
+            Response.Headers.CacheControl = "public, max-age=86400";
+            return File(result.ImageBytes, "image/jpeg");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.FallbackRedirectUrl))
+        {
+            return Redirect(result.FallbackRedirectUrl);
+        }
+
+        return NotFound();
+    }
+
     /// <summary>
     /// Безпечна перевірка статусу оплати замовлення за його публічним кодом (для сторінки /payment-result на фронтенді).
     /// Лише читання з БД без розкриття персональних даних (PII) та без зміни статусу оплати.

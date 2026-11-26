@@ -2,6 +2,7 @@ using System.Text.Json;
 using EcommerceBackend.Application.DTOs.Products;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Domain.Entities;
+using EcommerceBackend.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 
 namespace EcommerceBackend.Application.Services;
@@ -387,73 +388,104 @@ public sealed class ProductService(
             SortOrder = image.SortOrder
         }).ToList() ?? [];
 
-    private static ProductDto MapToDto(Product product) => new()
+    private static ProductDto MapToDto(Product product)
     {
-        Id = product.Id,
-        CategoryId = product.CategoryId,
-        CategoryName = product.Category?.Name,
-        SupplierId = product.SupplierId,
-        Sku = product.Sku,
-        Name = product.Name,
-        Slug = product.Slug,
-        Description = product.Description,
-        DropPrice = product.DropPrice,
-        Price = product.Price,
-        OldPrice = product.OldPrice,
-        Stock = product.Stock,
-        MainImageUrl = product.MainImageUrl,
-        Attributes = product.Attributes,
-        MetaTitle = product.MetaTitle,
-        MetaDescription = product.MetaDescription,
-        WeightKg = product.WeightKg,
-        IsActive = product.IsActive,
-        CreatedAt = product.CreatedAt,
-        UpdatedAt = product.UpdatedAt,
-        Images = product.Images
-            .OrderBy(image => image.SortOrder)
-            .Select(image => new ProductImageDto
-            {
-                Id = image.Id,
-                Url = image.Url,
-                Alt = image.Alt,
-                SortOrder = image.SortOrder
-            })
-            .ToList(),
-        Variants = MapVariants(product)
-    };
+        var (averageRating, reviewCount) = ComputeApprovedRating(product.Reviews);
 
-    private static PublicProductDto MapToPublicDto(Product product) => new()
+        return new ProductDto
+        {
+            Id = product.Id,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category?.Name,
+            SupplierId = product.SupplierId,
+            Sku = product.Sku,
+            Name = product.Name,
+            Slug = product.Slug,
+            Description = product.Description,
+            DropPrice = product.DropPrice,
+            Price = product.Price,
+            OldPrice = product.OldPrice,
+            Stock = product.Stock,
+            MainImageUrl = product.MainImageUrl,
+            Attributes = product.Attributes,
+            MetaTitle = product.MetaTitle,
+            MetaDescription = product.MetaDescription,
+            WeightKg = product.WeightKg,
+            AverageRating = averageRating,
+            ReviewCount = reviewCount,
+            IsActive = product.IsActive,
+            CreatedAt = product.CreatedAt,
+            UpdatedAt = product.UpdatedAt,
+            Images = product.Images
+                .OrderBy(image => image.SortOrder)
+                .Select(image => new ProductImageDto
+                {
+                    Id = image.Id,
+                    Url = image.Url,
+                    Alt = image.Alt,
+                    SortOrder = image.SortOrder
+                })
+                .ToList(),
+            Variants = MapVariants(product)
+        };
+    }
+
+    private static PublicProductDto MapToPublicDto(Product product)
     {
-        Id = product.Id,
-        CategoryId = product.CategoryId,
-        CategoryName = product.Category?.Name,
-        Sku = product.Sku,
-        Name = product.Name,
-        Slug = product.Slug,
-        Description = product.Description,
-        Price = product.Price,
-        OldPrice = product.OldPrice,
-        Stock = product.Stock,
-        MainImageUrl = product.MainImageUrl,
-        Attributes = product.Attributes,
-        MetaTitle = product.MetaTitle,
-        MetaDescription = product.MetaDescription,
-        WeightKg = product.WeightKg,
-        IsActive = product.IsActive,
-        CreatedAt = product.CreatedAt,
-        UpdatedAt = product.UpdatedAt,
-        Images = product.Images
-            .OrderBy(image => image.SortOrder)
-            .Select(image => new ProductImageDto
-            {
-                Id = image.Id,
-                Url = image.Url,
-                Alt = image.Alt,
-                SortOrder = image.SortOrder
-            })
-            .ToList(),
-        Variants = MapVariants(product)
-    };
+        var (averageRating, reviewCount) = ComputeApprovedRating(product.Reviews);
+
+        return new PublicProductDto
+        {
+            Id = product.Id,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category?.Name,
+            Sku = product.Sku,
+            Name = product.Name,
+            Slug = product.Slug,
+            Description = product.Description,
+            Price = product.Price,
+            OldPrice = product.OldPrice,
+            Stock = product.Stock,
+            MainImageUrl = product.MainImageUrl,
+            Attributes = product.Attributes,
+            MetaTitle = SeoMetaBuilder.BuildProductMetaTitle(product.Name, product.MetaTitle),
+            MetaDescription = SeoMetaBuilder.BuildProductMetaDescription(
+                product.Name,
+                product.Description,
+                product.Price,
+                product.MetaDescription),
+            WeightKg = product.WeightKg,
+            AverageRating = averageRating,
+            ReviewCount = reviewCount,
+            IsActive = product.IsActive,
+            CreatedAt = product.CreatedAt,
+            UpdatedAt = product.UpdatedAt,
+            Images = product.Images
+                .OrderBy(image => image.SortOrder)
+                .Select((image, index) => new ProductImageDto
+                {
+                    Id = image.Id,
+                    Url = image.Url,
+                    Alt = SeoMetaBuilder.BuildImageAlt(product.Name, image.Alt, index),
+                    SortOrder = image.SortOrder
+                })
+                .ToList(),
+            Variants = MapVariants(product)
+        };
+    }
+
+    private static (decimal? AverageRating, int ReviewCount) ComputeApprovedRating(ICollection<Review>? reviews)
+    {
+        if (reviews is null || reviews.Count == 0)
+            return (null, 0);
+
+        var approved = reviews.Where(r => r.Status == ReviewStatus.Approved).ToList();
+        if (approved.Count == 0)
+            return (null, 0);
+
+        var avg = decimal.Round((decimal)approved.Average(r => r.Rating), 1, MidpointRounding.AwayFromZero);
+        return (avg, approved.Count);
+    }
 
     private static List<ProductVariantDto> MapVariants(Product product)
     {

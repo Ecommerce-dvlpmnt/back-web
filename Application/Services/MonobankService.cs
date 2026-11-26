@@ -9,6 +9,7 @@ using EcommerceBackend.Application.Telegram;
 using EcommerceBackend.Data;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Domain.Enums;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,8 @@ public sealed class MonobankService(
     IOrderService orderService,
     AppDbContext dbContext,
     IConfiguration configuration,
-    ILogger<MonobankService> logger) : IMonobankService
+    ILogger<MonobankService> logger,
+    IHttpContextAccessor? httpContextAccessor = null) : IMonobankService
 {
     private const string DefaultBaseUrl = "https://api.monobank.ua";
     private const string DefaultPublicSiteUrl = "https://www.jingledecor.com.ua";
@@ -73,7 +75,7 @@ public sealed class MonobankService(
                 Code = sku,
                 Tax = [defaultTaxCode],
                 Unit = "шт.",
-                Icon = item.Product?.MainImageUrl
+                Icon = ResolveProductIconUrl(item.Product)
             };
         }).ToList();
 
@@ -697,10 +699,9 @@ public sealed class MonobankService(
             }
 
             case "failure":
-            case "expired":
             {
-                logger.LogWarning("Monobank payment {Status} for order {OrderPublicId}: {Reason}",
-                    normalizedStatus, orderSnapshot.PublicId, payload.FailureReason ?? normalizedStatus);
+                logger.LogWarning("Monobank payment failure for order {OrderPublicId}: {Reason}",
+                    orderSnapshot.PublicId, payload.FailureReason ?? normalizedStatus);
 
                 await AppendOrderPaymentAuditUnderLockAsync(
                     orderSnapshot.Id,
@@ -709,6 +710,26 @@ public sealed class MonobankService(
                     auditComment,
                     cancellationToken);
                 break;
+            }
+
+            case "expired":
+            {
+                logger.LogWarning(
+                    "Monobank invoice {InvoiceId} expired for order {OrderPublicId}. Auto-cancelling unpaid New order and returning stock.",
+                    invoiceId,
+                    orderSnapshot.PublicId);
+
+                var expiredRequest = new PaymentWebhookRequest
+                {
+                    OrderId = orderSnapshot.Id,
+                    ExternalPaymentId = invoiceId,
+                    PaymentProvider = "Monobank",
+                    PaymentStatus = PaymentStatus.Failed,
+                    CancelOrderOnFailure = true,
+                    Comment = auditComment
+                };
+
+                return await orderService.ProcessPaymentWebhookAsync(expiredRequest, cancellationToken);
             }
 
             case "processing":
@@ -910,6 +931,74 @@ public sealed class MonobankService(
 
     private static bool ContainsPlaceholderDomain(string url) =>
         url.Contains("mysite.com", StringComparison.OrdinalIgnoreCase);
+
+    private string? ResolveProductIconUrl(Product? product)
+    {
+        if (product is null || string.IsNullOrWhiteSpace(product.MainImageUrl))
+            return null;
+
+        var backendOrigin = ResolvePublicBackendBaseUrl();
+        if (!string.IsNullOrWhiteSpace(backendOrigin))
+            return $"{backendOrigin}/api/payments/monobank/item-icon/{product.Id:D}.jpg";
+
+        return product.MainImageUrl;
+    }
+
+    private string? ResolvePublicBackendBaseUrl()
+    {
+        var explicitUrl = (configuration["Monobank:PublicBackendUrl"] ?? configuration["BACKEND_PUBLIC_URL"])?.Trim();
+        if (TryNormalizePublicHttpsOrigin(explicitUrl, out var origin))
+            return origin;
+
+        var railwayDomain = configuration["RAILWAY_PUBLIC_DOMAIN"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(railwayDomain))
+        {
+            var candidate = railwayDomain.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || railwayDomain.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? railwayDomain
+                : $"https://{railwayDomain}";
+            if (TryNormalizePublicHttpsOrigin(candidate, out origin))
+                return origin;
+        }
+
+        if (TryNormalizePublicHttpsOrigin(ResolveConfiguredWebhookUrl(), out origin))
+            return origin;
+
+        var request = httpContextAccessor?.HttpContext?.Request;
+        if (request is not null && request.Host.HasValue)
+        {
+            var host = request.Host.Host;
+            if (!string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+                && !host.StartsWith("127.", StringComparison.OrdinalIgnoreCase))
+            {
+                var scheme = request.IsHttps ? "https" : request.Scheme;
+                if (TryNormalizePublicHttpsOrigin($"{scheme}://{request.Host.Value}", out origin))
+                    return origin;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryNormalizePublicHttpsOrigin(string? url, out string origin)
+    {
+        origin = string.Empty;
+        if (string.IsNullOrWhiteSpace(url) || ContainsPlaceholderDomain(url))
+            return false;
+
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return false;
+
+        if (uri.Scheme != Uri.UriSchemeHttps
+            || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.StartsWith("127.", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        origin = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        return true;
+    }
 
     private async Task<string> GetPublicKeyAsync(bool forceRefresh, CancellationToken cancellationToken)
     {
