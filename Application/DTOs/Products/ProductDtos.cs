@@ -39,6 +39,8 @@ public sealed class PublicProductDto
     public string? MetaTitle { get; set; }
     public string? MetaDescription { get; set; }
     public decimal? WeightKg { get; set; }
+    public decimal? AverageRating { get; set; }
+    public int ReviewCount { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -65,6 +67,8 @@ public sealed class ProductDto
     public string? MetaTitle { get; set; }
     public string? MetaDescription { get; set; }
     public decimal? WeightKg { get; set; }
+    public decimal? AverageRating { get; set; }
+    public int ReviewCount { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

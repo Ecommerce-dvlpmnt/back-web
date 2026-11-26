@@ -1,6 +1,7 @@
 using EcommerceBackend.Application.DTOs.Products;
 using EcommerceBackend.Application.Interfaces;
 using EcommerceBackend.Domain.Entities;
+using EcommerceBackend.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceBackend.Data.Repositories;
@@ -18,6 +19,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
             .AsNoTracking()
             .Include(product => product.Category)
             .Include(product => product.Images.OrderBy(image => image.SortOrder))
+            .Include(product => product.Reviews.Where(review => review.Status == ReviewStatus.Approved))
             .AsQueryable();
 
         if (query.CategoryId.HasValue)
@@ -182,6 +184,7 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
             .AsNoTracking()
             .Include(product => product.Category)
             .Include(product => product.Images.OrderBy(image => image.SortOrder))
+            .Include(product => product.Reviews.Where(review => review.Status == ReviewStatus.Approved))
             .Include(product => product.RelatedLinks)
                 .ThenInclude(r => r.RelatedProduct);
 }
