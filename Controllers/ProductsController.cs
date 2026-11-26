@@ -21,10 +21,15 @@ public sealed class ProductsController(IProductService productService) : Control
         var parameters = new ProductQueryParameters
         {
             CategoryId = query.CategoryId,
+            CategoryIds = query.CategoryIds,
             Search = query.Search,
             SortBy = query.SortBy,
+            MinPrice = query.MinPrice,
+            MaxPrice = query.MaxPrice,
+            InStock = query.InStock,
             PageNumber = query.PageNumber,
             PageSize = query.PageSize,
+            Summary = query.Summary,
             OnlyActive = true
         };
         return Ok(await productService.GetPublicAllAsync(parameters, cancellationToken));

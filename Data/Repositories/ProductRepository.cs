@@ -25,11 +25,21 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
         if (query.CategoryId.HasValue)
             products = products.Where(product => product.CategoryId == query.CategoryId.Value);
 
+        if (query.CategoryIds is { Count: > 0 })
+            products = products.Where(product => query.CategoryIds.Contains(product.CategoryId));
+
         if (query.SupplierId.HasValue)
             products = products.Where(product => product.SupplierId == query.SupplierId.Value);
 
         if (query.OnlyActive == true)
             products = products.Where(product => product.IsActive);
+
+        if (query.MinPrice.HasValue)
+            products = products.Where(product => product.Price >= query.MinPrice.Value);
+        if (query.MaxPrice.HasValue)
+            products = products.Where(product => product.Price <= query.MaxPrice.Value);
+        if (query.InStock == true)
+            products = products.Where(product => product.Stock > 0);
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -41,18 +51,37 @@ public sealed class ProductRepository(AppDbContext dbContext) : IProductReposito
 
         products = (query.SortBy ?? "date_desc").ToLowerInvariant() switch
         {
-            "price_asc" => products.OrderBy(product => product.Price),
-            "price_desc" => products.OrderByDescending(product => product.Price),
-            "date_asc" => products.OrderBy(product => product.CreatedAt),
-            "date_desc" => products.OrderByDescending(product => product.CreatedAt),
-            _ => products.OrderByDescending(product => product.CreatedAt)
+            "price_asc" => products.OrderBy(product => product.Price).ThenBy(product => product.Id),
+            "price_desc" => products.OrderByDescending(product => product.Price).ThenBy(product => product.Id),
+            "date_asc" => products.OrderBy(product => product.CreatedAt).ThenBy(product => product.Id),
+            "date_desc" => products.OrderByDescending(product => product.CreatedAt).ThenBy(product => product.Id),
+            _ => products.OrderByDescending(product => product.CreatedAt).ThenBy(product => product.Id)
         };
 
         var totalCount = await products.CountAsync(cancellationToken);
-        var items = await products
-            .Skip(skip)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var page = products.Skip(skip).Take(pageSize);
+        // Project before materialization: no descriptions, JSON attributes, SEO fields,
+        // supplier data or image collections are read for storefront cards.
+        var items = query.Summary
+            ? await page.Select(product => new Product
+            {
+                Id = product.Id,
+                CategoryId = product.CategoryId,
+                Category = new Category { Name = product.Category.Name },
+                Sku = product.Sku,
+                Name = product.Name,
+                Slug = product.Slug,
+                Price = product.Price,
+                OldPrice = product.OldPrice,
+                Stock = product.Stock,
+                MainImageUrl = product.MainImageUrl,
+                IsActive = product.IsActive,
+                UpdatedAt = product.UpdatedAt
+            }).ToListAsync(cancellationToken)
+            : await page
+                .Include(product => product.Category)
+                .Include(product => product.Images.OrderBy(image => image.SortOrder))
+                .ToListAsync(cancellationToken);
 
         return new PagedResult<Product>
         {
