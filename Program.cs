@@ -214,6 +214,11 @@ builder.Services.AddHttpClient<IMonobankService, MonobankService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);
 });
+builder.Services.AddHttpClient(MonobankIconService.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddScoped<IMonobankIconService, MonobankIconService>();
 builder.Services.AddHttpClient(TelegramBotClient.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(65);
