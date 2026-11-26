@@ -241,7 +241,22 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
-builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
+builder.Services.AddHttpClient(CloudflareR2ImageStorageService.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+if (CloudflareR2ImageStorageService.IsConfigured(builder.Configuration))
+{
+    builder.Services.AddSingleton<IImageStorageService, CloudflareR2ImageStorageService>();
+}
+else
+{
+    if (!builder.Environment.IsDevelopment())
+    {
+        Log.Warning("Cloudflare R2 storage is not configured ('CloudflareR2:*' / 'R2_*'). Falling back to ephemeral LocalImageStorageService (/wwwroot/uploads).");
+    }
+    builder.Services.AddSingleton<IImageStorageService, LocalImageStorageService>();
+}
 
 // Admin & Security Services
 builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();

@@ -699,10 +699,9 @@ public sealed class MonobankService(
             }
 
             case "failure":
-            case "expired":
             {
-                logger.LogWarning("Monobank payment {Status} for order {OrderPublicId}: {Reason}",
-                    normalizedStatus, orderSnapshot.PublicId, payload.FailureReason ?? normalizedStatus);
+                logger.LogWarning("Monobank payment failure for order {OrderPublicId}: {Reason}",
+                    orderSnapshot.PublicId, payload.FailureReason ?? normalizedStatus);
 
                 await AppendOrderPaymentAuditUnderLockAsync(
                     orderSnapshot.Id,
@@ -711,6 +710,26 @@ public sealed class MonobankService(
                     auditComment,
                     cancellationToken);
                 break;
+            }
+
+            case "expired":
+            {
+                logger.LogWarning(
+                    "Monobank invoice {InvoiceId} expired for order {OrderPublicId}. Auto-cancelling unpaid New order and returning stock.",
+                    invoiceId,
+                    orderSnapshot.PublicId);
+
+                var expiredRequest = new PaymentWebhookRequest
+                {
+                    OrderId = orderSnapshot.Id,
+                    ExternalPaymentId = invoiceId,
+                    PaymentProvider = "Monobank",
+                    PaymentStatus = PaymentStatus.Failed,
+                    CancelOrderOnFailure = true,
+                    Comment = auditComment
+                };
+
+                return await orderService.ProcessPaymentWebhookAsync(expiredRequest, cancellationToken);
             }
 
             case "processing":
